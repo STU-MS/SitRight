@@ -1,0 +1,73 @@
+# .NET
+bin/
+obj/
+[Bb]uild/
+[Mm]aintain[Cc]rash/
+[Ll]og/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# Visual Studio
+.vs/
+*.userprefs
+*[Pp]ublish.xml
+*.pubxml
+*.pubxml.user
+*.DotSettings.user
+
+# Rider
+.idea/
+*.sln.iml
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# WPF
+App.g.cs
+App.g.i.cs
+MainWindow.g.cs
+MainWindow.g.i.cs
+
+# Test Results
+[Tt]est[Rr]esult*/
+*.trx
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# BenchmarkDotNet
+benchmarkdotnet._results/
+
+# Dotnet-format
+*.dotnet-format
+
+# OS
+.DS_Store
+Thumbs.db
