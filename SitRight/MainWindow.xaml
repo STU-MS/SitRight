@@ -54,9 +54,9 @@
         <!-- 模拟模式区 -->
         <GroupBox Grid.Row="2" Header="模拟模式" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" Margin="8">
-                <CheckBox x:Name="SimulationModeCheckBox" Content="启用模拟" VerticalAlignment="Center"/>
+                <CheckBox x:Name="SimulationModeCheckBox" Content="启用模拟" VerticalAlignment="Center" Checked="SimulationModeChanged" Unchecked="SimulationModeChanged"/>
                 <Slider x:Name="SimulatedValueSlider" Minimum="0" Maximum="100" Value="0"
-                        Width="200" Margin="16,0,0,0" IsEnabled="False"/>
+                        Width="200" Margin="16,0,0,0" IsEnabled="False" ValueChanged="SimulatedValueSlider_ValueChanged"/>
                 <TextBlock x:Name="SimulatedValueText" Text="0" VerticalAlignment="Center" Margin="8,0,0,0" Width="30"/>
             </StackPanel>
         </GroupBox>

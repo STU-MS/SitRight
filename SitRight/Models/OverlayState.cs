@@ -11,12 +11,22 @@ public class OverlayState
     public double MessageOpacity { get; set; }
     public int SeverityLevel { get; set; }
 
+    public bool BlockInput { get; set; }
+
     public static OverlayState FromDisplayLevel(double level, int hintStart = 30, int urgentLevel = 80)
     {
         var normalized = level / 100.0;
+        
+        //var blockInput = level >= 80;
 
         // Opacity mapping: low level = subtle, high level = aggressive
-        var maskOpacity = 0.05 + Math.Pow(normalized, 1.4) * 0.65;
+        /*var maskOpacity = 0.05 + Math.Pow(normalized, 1.4) * 0.65;*/
+        var maskOpacity = 0.02 + Math.Pow(normalized, 2.8) * 0.98;
+        
+        if (level > 95)
+        {
+            maskOpacity = 1.0;
+        }
 
         // Color: white (cold) -> light gray -> darker gray
         string color;
@@ -32,19 +42,7 @@ public class OverlayState
         // Edge opacity for fog effect
         var edgeOpacity = Math.Pow(normalized, 1.8) * 0.25;
 
-        // Message text based on severity
-        string message;
-        if (level < hintStart)
-            message = string.Empty;
-        else if (level < urgentLevel)
-            message = "请调整坐姿";
-        else
-            message = "请立即调整坐姿！";
-
-        // Message opacity: fade in after hintStart
-        var messageOpacity = level > hintStart
-            ? Math.Min(1.0, (level - hintStart) / 40.0)
-            : 0;
+       
 
         // Severity level
         var severity = level switch
@@ -60,9 +58,8 @@ public class OverlayState
             MaskOpacity = maskOpacity,
             MaskColor = color,
             EdgeOpacity = edgeOpacity,
-            MessageText = message,
-            MessageOpacity = messageOpacity,
-            SeverityLevel = severity
+            SeverityLevel = severity,
+            //BlockInput = blockInput //决定能不能交互
         };
     }
 }
