@@ -66,7 +66,7 @@ git commit -m "chore: 添加 System.IO.Ports 依赖"
 
 **Files:**
 - Create: `SitRight/Services/DeviceProtocol.cs`
-- Create: `SitRight/Services/DeviceProtocolTests.cs`
+- Create: `SitRight.Tests/DeviceProtocolTests.cs`
 
 **TDD Step 1: 编写测试（RED）**
 
@@ -168,7 +168,7 @@ Expected: PASS
 **Step 5: 提交**
 
 ```bash
-git add SitRight/Services/DeviceProtocol.cs SitRight/Services/DeviceProtocolTests.cs
+git add SitRight/Services/DeviceProtocol.cs SitRight.Tests/DeviceProtocolTests.cs
 git commit -m "feat: 实现 DeviceProtocol 协议解析 (TDD)"
 ```
 
@@ -179,7 +179,7 @@ git commit -m "feat: 实现 DeviceProtocol 协议解析 (TDD)"
 **Files:**
 - Create: `SitRight/Services/ISerialService.cs`
 - Create: `SitRight/Services/SerialService.cs`
-- Create: `SitRight/Services/SerialServiceTests.cs`
+- Create: `SitRight.Tests/SerialServiceTests.cs`
 
 **TDD Step 1: 编写接口测试（RED）**
 
@@ -414,7 +414,7 @@ Expected: PASS
 **Step 9: 提交**
 
 ```bash
-git add SitRight/Services/ISerialService.cs SitRight/Services/SerialService.cs SitRight/Services/SerialServiceTests.cs
+git add SitRight/Services/ISerialService.cs SitRight/Services/SerialService.cs SitRight.Tests/SerialServiceTests.cs
 git commit -m "feat: 实现 SerialService 串口服务 (TDD)"
 ```
 
@@ -424,7 +424,7 @@ git commit -m "feat: 实现 SerialService 串口服务 (TDD)"
 
 **Files:**
 - Create: `SitRight/Services/DeviceStateManager.cs`
-- Create: `SitRight/Services/DeviceStateManagerTests.cs`
+- Create: `SitRight.Tests/DeviceStateManagerTests.cs`
 
 **对应完整计划章节:** 第7章 设备状态机设计
 
@@ -688,7 +688,7 @@ Expected: PASS
 **Step 5: 提交**
 
 ```bash
-git add SitRight/Services/DeviceStateManager.cs SitRight/Services/DeviceStateManagerTests.cs
+git add SitRight/Services/DeviceStateManager.cs SitRight.Tests/DeviceStateManagerTests.cs
 git commit -m "feat: 实现 DeviceStateManager 设备状态机 (TDD)"
 ```
 
@@ -780,11 +780,12 @@ git commit -m "feat: 集成串口服务到 MainWindow"
 |------|------|------------------|
 | `Services/ISerialService.cs` | 串口服务接口 | 第11章 |
 | `Services/SerialService.cs` | 串口连接/接收/异常处理 | 第6章、第11章 |
-| `Services/SerialServiceTests.cs` | 串口服务测试 | - |
+| `SitRight.Tests/SerialServiceTests.cs` | 串口服务测试 | - |
 | `Services/DeviceProtocol.cs` | 协议解析（行→整数） | 第6章 |
-| `Services/DeviceProtocolTests.cs` | 协议解析测试 | - |
+| `SitRight.Tests/DeviceProtocolTests.cs` | 协议解析测试 | - |
 | `Services/DeviceStateManager.cs` | 设备状态机 | 第7章 |
-| `Services/DeviceStateManagerTests.cs` | 状态机测试 | - |
+| `SitRight.Tests/DeviceStateManagerTests.cs` | 状态机测试 | - |
+| `SitRight/MainWindow.xaml.cs` | 主窗口最小接线（串口连接、状态显示、超时检查） | 第9章 |
 
 **服务接口事件（供任务C/D订阅）:**
 ```csharp

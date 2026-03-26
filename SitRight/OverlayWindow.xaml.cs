@@ -52,7 +52,8 @@ namespace SitRight
         public void ApplyState(OverlayState state)
         {
             MaskRect.Opacity = state.MaskOpacity;
-            MaskRect.Fill = (Brush)new BrushConverter().ConvertFromString(state.MaskColor);
+            var brush = new BrushConverter().ConvertFromString(state.MaskColor) as Brush;
+            MaskRect.Fill = brush ?? Brushes.White;
 
             EdgeRect.Opacity = state.EdgeOpacity;
 
