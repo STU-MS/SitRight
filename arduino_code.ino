@@ -1,5 +1,4 @@
 // 坐姿矫正仪 
-
 const int LED_R = 9;
 const int LED_G = 10;
 const int LED_B = 11;
@@ -14,13 +13,13 @@ int angleValue = 0;
 int blurLevel = 0;  // 模糊度 0-100
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);  // 波特率 115200
   pinMode(LED_R, OUTPUT);
   pinMode(LED_G, OUTPUT);
   pinMode(LED_B, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   
-  Serial.println("坐姿矫正仪启动 - 连续模糊度版本");
+  Serial.println("坐姿矫正仪启动");
   Serial.print("正常阈值: ");
   Serial.print(normalThreshold);
   Serial.print(", 最大阈值: ");
@@ -49,35 +48,30 @@ void loop() {
   delay(100);
 }
 
+// ==================== 模糊度计算算法 ====================
 int calculateBlur(int angle, int normal, int max) {
-  // 角度 ≤ 正常阈值 → 模糊度 0%
   if (angle <= normal) {
     return 0;
   }
-  // 角度 ≥ 最大阈值 → 模糊度 100%
   else if (angle >= max) {
     return 100;
   }
-  // 中间值 → 线性映射 0~100%
   else {
     return (angle - normal) * 100 / (max - normal);
   }
 }
 
-void controlLEDbyBlur(int blur) {
-  // 模糊度 0%   → 绿灯亮 (R=0, G=255, B=0)
-  // 模糊度 50%  → 黄灯亮 (R=255, G=255, B=0)
-  // 模糊度 100% → 红灯亮 (R=255, G=0, B=0)
-  
+// ==================== LED 渐变控制 ====================
+void controlLEDbyBlur(int blur) { 
   int redValue = 0;
   int greenValue = 0;
   
   if (blur <= 50) {
     // 0-50%: 绿 → 黄
-    // 绿从 255 降到 0，红从 0 升到 255
+    // 红从 0 升到 255，绿保持 255
     int ratio = blur * 2;  // 0-100
     redValue = map(ratio, 0, 100, 0, 255);
-    greenValue = map(ratio, 0, 100, 255, 0);
+    greenValue = 255;
   } else {
     // 50-100%: 黄 → 红
     // 红保持 255，绿从 255 降到 0
@@ -91,11 +85,11 @@ void controlLEDbyBlur(int blur) {
   analogWrite(LED_B, 0);  // 蓝灯不用
 }
 
+// ==================== 按键调节阈值 ====================
 void handleButton() {
   if (digitalRead(BUTTON_PIN) == LOW) {
     delay(50);
     if (digitalRead(BUTTON_PIN) == LOW) {
-      // 按一次，交替调节 normal 和 max
       static int mode = 0;
       if (mode == 0) {
         normalThreshold += 50;
