@@ -1,21 +1,41 @@
 using System;
 using System.Windows;
+using System.Windows.Threading;
 using SitRight.Models;
+using SitRight.Services;
 
 namespace SitRight;
 public partial class MainWindow : Window
 {
     private bool _isSimulationMode = false;
-    private OverlayWindow _overlay;
+    private readonly OverlayWindow _overlay;
+    private readonly BlurController _blurController;
+    private DispatcherTimer? _displayTimer;
     
     public MainWindow()
     {
         InitializeComponent();
-        
+
         _overlay = new OverlayWindow();
         _overlay.Show();
-        
+
+        _blurController = new BlurController();
+        _blurController.OnDisplayValueChanged += OnBlurDisplayValueChanged;
+
+        _displayTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(33)
+        };
+        _displayTimer.Tick += (s, e) => _blurController.Tick();
+        _displayTimer.Start();
+
         Log("应用程序已启动");
+    }
+
+    private void OnBlurDisplayValueChanged(double displayValue)
+    {
+        var state = OverlayState.FromDisplayLevel(displayValue);
+        _overlay.ApplyState(state);
     }
     
     private void SimulationModeChanged(object sender, RoutedEventArgs e)
@@ -26,22 +46,13 @@ public partial class MainWindow : Window
 
         if (_isSimulationMode)
         {
-            // 开启模拟 → 立即应用当前值
-            var level = SimulatedValueSlider.Value;
-            var state = OverlayState.FromDisplayLevel(level);
-            _overlay.ApplyState(state);
+            // 开启模拟 → 推送当前值到 BlurController
+            _blurController.PushRawValue((int)SimulatedValueSlider.Value);
         }
         else
         {
-            // 关闭模拟 → 清空遮罩
-            _overlay.ApplyState(new OverlayState
-            {
-                MaskOpacity = 0,
-                EdgeOpacity = 0,
-                MessageOpacity = 0,
-                MessageText = "",
-                BlockInput = false
-            });
+            // 关闭模拟 → 重置 BlurController，清空遮罩
+            _blurController.Reset();
         }
     }
     
@@ -51,8 +62,11 @@ public partial class MainWindow : Window
 
         SimulatedValueText.Text = ((int)level).ToString();
 
-        var state = OverlayState.FromDisplayLevel(level);
-        _overlay.ApplyState(state);
+        // 仅在模拟模式下推送值到 BlurController
+        if (_isSimulationMode)
+        {
+            _blurController.PushRawValue((int)level);
+        }
     }
 
     protected void Log(string message)
@@ -68,5 +82,12 @@ public partial class MainWindow : Window
     protected void UpdateStatus(string status, string color = "Gray")
     {
         Dispatcher.Invoke(() => StatusText.Text = status);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _displayTimer?.Stop();
+        _overlay?.Close();
+        base.OnClosed(e);
     }
 }

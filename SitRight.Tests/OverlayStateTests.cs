@@ -18,10 +18,11 @@ public class OverlayStateTests
     }
 
     [Fact]
-    public void FromDisplayLevel_LevelZero_ReturnsMinimalMask()
+    public void FromDisplayLevel_LevelZero_ReturnsTransparentOverlay()
     {
         var state = OverlayState.FromDisplayLevel(0);
-        Assert.True(state.MaskOpacity < 0.1);
+        Assert.Equal(0, state.MaskOpacity);
+        Assert.Equal(0, state.EdgeOpacity);
         Assert.Equal(string.Empty, state.MessageText);
         Assert.Equal(0, state.SeverityLevel);
     }

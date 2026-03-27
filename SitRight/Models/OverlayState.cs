@@ -15,6 +15,16 @@ public class OverlayState
 
     public static OverlayState FromDisplayLevel(double level, int hintStart = 30, int urgentLevel = 80)
     {
+        if (level <= 0)
+        {
+            return new OverlayState
+            {
+                MaskOpacity = 0,
+                EdgeOpacity = 0,
+                SeverityLevel = 0
+            };
+        }
+
         var normalized = level / 100.0;
         
         //var blockInput = level >= 80;
