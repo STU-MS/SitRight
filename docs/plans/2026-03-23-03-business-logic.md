@@ -1,4 +1,4 @@
-# BlurController 业务逻辑层实现计划
+# 业务逻辑层实现计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 >
@@ -7,11 +7,11 @@
 > 2. 再写实现，运行验证 PASS
 > 3. 重构代码
 
-**Goal:** 实现 BlurController 平滑控制器、ValueMapper 数值映射器、ConfigService 配置服务
+**Goal:** 实现 ValueMapper 数值映射器、ConfigService 配置服务
 
 **Architecture:**
-- BlurController 维护 RawValue、TargetValue、DisplayValue 三级状态，通过定时器平滑插值（第5章核心数据流、第11章 BlurController 说明）
-- ValueMapper 将 DisplayValue 映射为 OverlayState 视觉参数（第8章 Overlay设计、第11章 ValueMapper说明）
+- **平滑算法在硬件端完成**，PC 端不包含 BlurController，收到的 blurLevel 已经是平滑后的值
+- ValueMapper 将硬件端发来的 blurLevel 直接映射为 OverlayState 视觉参数（第8章 Overlay设计、第11章 ValueMapper说明）
 - ConfigService 处理 JSON 配置文件的读写（第16章 配置与可扩展性）
 
 **Tech Stack:** .NET 8.0 / WPF / System.Text.Json / xUnit
@@ -42,254 +42,13 @@ git commit -m "chore: 验证 Model 类可用"
 
 ---
 
-## 任务1: BlurController 平滑控制器
+## 任务1: ~~BlurController 平滑控制器~~ (已移除)
 
-**Files:**
-- Create: `SitRight/Services/BlurController.cs`
-- Create: `SitRight/Services/BlurControllerTests.cs`
+> **说明：** 平滑算法已移至硬件端完成，PC 端不再需要 BlurController。
+> 硬件端输出的 blurLevel 已经是经过指数滑动平均处理后的平滑值，
+> PC 端收到后直接通过 ValueMapper 映射为 OverlayState 即可。
 
-**对应完整计划章节:** 第5章 核心数据流、第11章 BlurController 说明、第12章 推荐参数默认值
-
-**TDD Step 1: 编写测试（RED）**
-
-```csharp
-using Xunit;
-using SitRight.Services;
-
-namespace SitRight.Services;
-
-public class BlurControllerTests
-{
-    [Fact]
-    public void InitialDisplayValue_IsZero()
-    {
-        var controller = new BlurController();
-        Assert.Equal(0, controller.DisplayValue);
-    }
-
-    [Fact]
-    public void InitialTargetValue_IsZero()
-    {
-        var controller = new BlurController();
-        Assert.Equal(0, controller.TargetValue);
-    }
-
-    [Fact]
-    public void PushRawValue_UpdatesTargetValue()
-    {
-        var controller = new BlurController();
-        controller.PushRawValue(50);
-        Assert.Equal(50, controller.TargetValue);
-    }
-
-    [Fact]
-    public void PushRawValue_UpdatesRawValue()
-    {
-        var controller = new BlurController();
-        controller.PushRawValue(37);
-        Assert.Equal(37, controller.RawValue);
-    }
-
-    [Fact]
-    public void PushRawValue_DoesNotImmediatelyUpdateDisplayValue()
-    {
-        var controller = new BlurController();
-        controller.PushRawValue(100);
-        // Display value should still be 0 until Tick() is called
-        Assert.Equal(0, controller.DisplayValue);
-    }
-
-    [Fact]
-    public void Tick_MovesDisplayValueTowardTarget()
-    {
-        var controller = new BlurController(alpha: 1.0); // alpha=1 for immediate
-        controller.PushRawValue(100);
-        controller.Tick();
-        Assert.Equal(100, controller.DisplayValue);
-    }
-
-    [Fact]
-    public void Tick_WithPartialAlpha_MovesPartially()
-    {
-        var controller = new BlurController(alpha: 0.5);
-        controller.PushRawValue(100);
-        controller.Tick();
-        // With alpha=0.5, display should move halfway: 0 + (100-0)*0.5 = 50
-        Assert.Equal(50, controller.DisplayValue);
-    }
-
-    [Fact]
-    public void Tick_MultipleCalls_ConvergesToTarget()
-    {
-        var controller = new BlurController(alpha: 0.18); // Recommended default
-        controller.PushRawValue(100);
-
-        // Simulate multiple ticks
-        for (int i = 0; i < 10; i++)
-        {
-            controller.Tick();
-        }
-
-        // Should be very close to 100
-        Assert.True(controller.DisplayValue > 90);
-    }
-
-    [Fact]
-    public void Tick_SmallValueBelowThreshold_ConvergesToZero()
-    {
-        var controller = new BlurController(smallValueThreshold: 5);
-        controller.PushRawValue(3);
-
-        // After ticks, should converge to 0
-        controller.Tick();
-
-        // Small values should quickly converge to zero
-        Assert.True(controller.DisplayValue < 1);
-    }
-
-    [Fact]
-    public void Reset_SetsAllValuesToZero()
-    {
-        var controller = new BlurController();
-        controller.PushRawValue(50);
-        controller.Tick(); // Move toward target
-
-        controller.Reset();
-
-        Assert.Equal(0, controller.RawValue);
-        Assert.Equal(0, controller.TargetValue);
-        Assert.Equal(0, controller.DisplayValue);
-    }
-
-    [Fact]
-    public void OnDisplayValueChanged_EventIsRaisedOnTick()
-    {
-        var controller = new BlurController(alpha: 1.0);
-        var changedValues = new List<double>();
-
-        controller.OnDisplayValueChanged += value => changedValues.Add(value);
-        controller.PushRawValue(50);
-        controller.Tick();
-
-        Assert.Contains(50, changedValues);
-    }
-
-    [Fact]
-    public void Tick_DoesNotThrow()
-    {
-        var controller = new BlurController();
-        controller.PushRawValue(50);
-        var exception = Record.Exception(() => controller.Tick());
-        Assert.Null(exception);
-    }
-}
-```
-
-**Step 2: 运行测试（RED）**
-
-```bash
-cd SitRight
-dotnet test --filter "FullyQualifiedName~BlurControllerTests"
-```
-Expected: FAIL - BlurController not found
-
-**TDD Step 3: 实现 BlurController（GREEN）**
-
-```csharp
-namespace SitRight.Services;
-
-/// <summary>
-/// BlurController：第5章核心数据流、第11章关键模块说明
-/// 维护 RawValue、TargetValue、DisplayValue 三级状态
-/// 使用指数滑动平均实现平滑过渡
-/// </summary>
-public class BlurController
-{
-    private readonly double _alpha;
-    private readonly double _smallValueThreshold;
-    private readonly double _convergeSpeed;
-
-    public event Action<double>? OnDisplayValueChanged;
-
-    public double RawValue { get; private set; }
-    public double TargetValue { get; private set; }
-    public double DisplayValue { get; private set; }
-
-    /// <summary>
-    /// 创建 BlurController
-    /// </summary>
-    /// <param name="alpha">平滑系数，推荐 0.12~0.25，参见第12章推荐参数默认值</param>
-    /// <param name="smallValueThreshold">低于此值视为接近零，默认 5</param>
-    /// <param name="convergeSpeed">小值收敛速度</param>
-    public BlurController(
-        double alpha = 0.18,
-        double smallValueThreshold = 5,
-        double convergeSpeed = 0.1)
-    {
-        _alpha = alpha;
-        _smallValueThreshold = smallValueThreshold;
-        _convergeSpeed = convergeSpeed;
-    }
-
-    /// <summary>
-    /// 接收原始值，更新目标值
-    /// </summary>
-    public void PushRawValue(int value)
-    {
-        RawValue = value;
-        TargetValue = value;
-    }
-
-    /// <summary>
-    /// 执行一次平滑插值 - 应由定时器驱动，每 16~33ms 调用一次
-    /// </summary>
-    public void Tick()
-    {
-        if (TargetValue < _smallValueThreshold)
-        {
-            // 小值快速收敛到零，防止尾巴拖太长（参见第11章说明）
-            DisplayValue = Lerp(DisplayValue, 0, _convergeSpeed * 3);
-        }
-        else
-        {
-            DisplayValue = Lerp(DisplayValue, TargetValue, _alpha);
-        }
-
-        // 非常接近零时直接归零
-        if (Math.Abs(DisplayValue) < 0.01)
-            DisplayValue = 0;
-
-        OnDisplayValueChanged?.Invoke(DisplayValue);
-    }
-
-    public void Reset()
-    {
-        RawValue = 0;
-        TargetValue = 0;
-        DisplayValue = 0;
-        OnDisplayValueChanged?.Invoke(DisplayValue);
-    }
-
-    private double Lerp(double current, double target, double alpha)
-    {
-        return current + (target - current) * alpha;
-    }
-}
-```
-
-**Step 4: 运行测试（GREEN）**
-
-```bash
-dotnet test --filter "FullyQualifiedName~BlurControllerTests"
-```
-Expected: PASS
-
-**Step 5: 提交**
-
-```bash
-git add SitRight/Services/BlurController.cs SitRight/Services/BlurControllerTests.cs
-git commit -m "feat: 实现 BlurController 平滑控制器 (TDD)"
-```
+**无代码需要实现。** 此任务已标记为移除。
 
 ---
 
@@ -297,9 +56,13 @@ git commit -m "feat: 实现 BlurController 平滑控制器 (TDD)"
 
 **Files:**
 - Create: `SitRight/Services/ValueMapper.cs`
-- Create: `SitRight/Services/ValueMapperTests.cs`
+- Create: `SitRight.Tests/ValueMapperTests.cs`
 
 **对应完整计划章节:** 第8章 Overlay设计、第11章 ValueMapper说明
+
+**设计说明：**
+- ValueMapper.Map 的参数语义为"直接映射硬件端发来的 blurLevel"
+- blurLevel 由硬件端经过平滑算法处理后发送，PC 端不做二次平滑
 
 **TDD Step 1: 编写测试（RED）**
 
@@ -308,7 +71,7 @@ using Xunit;
 using SitRight.Models;
 using SitRight.Services;
 
-namespace SitRight.Services;
+namespace SitRight.Tests;
 
 public class ValueMapperTests
 {
@@ -424,8 +187,10 @@ using SitRight.Models;
 namespace SitRight.Services;
 
 /// <summary>
-/// ValueMapper：将 DisplayLevel 映射为 OverlayState 视觉参数
+/// ValueMapper：将硬件端发来的 blurLevel 直接映射为 OverlayState 视觉参数
 /// 对应第8章 Overlay设计、第11章 ValueMapper说明
+///
+/// 注意：blurLevel 由硬件端完成平滑处理，PC 端不做二次平滑
 /// </summary>
 public class ValueMapper
 {
@@ -439,13 +204,13 @@ public class ValueMapper
     }
 
     /// <summary>
-    /// 将显示值映射为 Overlay 视觉状态
+    /// 将硬件端发来的 blurLevel 映射为 Overlay 视觉状态
     /// </summary>
-    /// <param name="displayLevel">0~100 的显示值</param>
+    /// <param name="blurLevel">硬件端发来的 0~100 平滑值（已在硬件端完成平滑处理）</param>
     /// <returns>OverlayState 视觉参数</returns>
-    public OverlayState Map(double displayLevel)
+    public OverlayState Map(int blurLevel)
     {
-        return OverlayState.FromDisplayLevel(displayLevel, _hintStartLevel, _urgentLevel);
+        return OverlayState.FromDisplayLevel(blurLevel, _hintStartLevel, _urgentLevel);
     }
 }
 ```
@@ -460,7 +225,7 @@ Expected: PASS
 **Step 5: 提交**
 
 ```bash
-git add SitRight/Services/ValueMapper.cs SitRight/Services/ValueMapperTests.cs
+git add SitRight/Services/ValueMapper.cs SitRight.Tests/ValueMapperTests.cs
 git commit -m "feat: 实现 ValueMapper 数值映射器 (TDD)"
 ```
 
@@ -470,10 +235,13 @@ git commit -m "feat: 实现 ValueMapper 数值映射器 (TDD)"
 
 **Files:**
 - Create: `SitRight/Services/ConfigService.cs`
-- Create: `SitRight/Services/ConfigServiceTests.cs`
+- Create: `SitRight.Tests/ConfigServiceTests.cs`
 - Create: `SitRight/config.json`
 
 **对应完整计划章节:** 第16章 配置与可扩展性
+
+**设计说明：**
+- AppConfig 中移除 SmoothingAlpha 和 DisplayRefreshIntervalMs（平滑在硬件端完成，PC端不需要这两个参数）
 
 **TDD Step 1: 编写测试（RED）**
 
@@ -483,7 +251,7 @@ using SitRight.Services;
 using SitRight.Models;
 using System.IO;
 
-namespace SitRight.Services;
+namespace SitRight.Tests;
 
 public class ConfigServiceTests : IDisposable
 {
@@ -511,8 +279,7 @@ public class ConfigServiceTests : IDisposable
         var initialConfig = new AppConfig
         {
             DefaultComPort = "COM5",
-            BaudRate = 9600,
-            SmoothingAlpha = 0.25
+            BaudRate = 9600
         };
         _service.Save(initialConfig);
 
@@ -522,7 +289,6 @@ public class ConfigServiceTests : IDisposable
 
         Assert.Equal("COM5", loaded.DefaultComPort);
         Assert.Equal(9600, loaded.BaudRate);
-        Assert.Equal(0.25, loaded.SmoothingAlpha);
     }
 
     [Fact]
@@ -538,10 +304,10 @@ public class ConfigServiceTests : IDisposable
     public void Update_ModifiesAndSaves()
     {
         _service.Load();
-        _service.Update(c => c.SmoothingAlpha = 0.5);
+        _service.Update(c => c.DefaultComPort = "COM7");
 
         var reloaded = _service.Load();
-        Assert.Equal(0.5, reloaded.SmoothingAlpha);
+        Assert.Equal("COM7", reloaded.DefaultComPort);
     }
 
     [Fact]
@@ -556,11 +322,11 @@ public class ConfigServiceTests : IDisposable
     public void Save_InvalidatesCache()
     {
         var config1 = _service.Load();
-        _service.Save(new AppConfig { SmoothingAlpha = 0.9 });
+        _service.Save(new AppConfig { DefaultComPort = "COM9" });
         var config2 = _service.Load();
 
         Assert.NotSame(config1, config2);
-        Assert.Equal(0.9, config2.SmoothingAlpha);
+        Assert.Equal("COM9", config2.DefaultComPort);
     }
 
     public void Dispose()
@@ -655,8 +421,6 @@ public class ConfigService
   "defaultComPort": "COM1",
   "baudRate": 115200,
   "timeoutThresholdMs": 2000,
-  "displayRefreshIntervalMs": 33,
-  "smoothingAlpha": 0.18,
   "maxMaskOpacity": 0.70,
   "hintStartLevel": 30,
   "urgentLevel": 80
@@ -673,7 +437,7 @@ Expected: PASS
 **Step 6: 提交**
 
 ```bash
-git add SitRight/Services/ConfigService.cs SitRight/Services/ConfigServiceTests.cs SitRight/config.json
+git add SitRight/Services/ConfigService.cs SitRight.Tests/ConfigServiceTests.cs SitRight/config.json
 git commit -m "feat: 实现 ConfigService 配置服务 (TDD)"
 ```
 
@@ -684,7 +448,13 @@ git commit -m "feat: 实现 ConfigService 配置服务 (TDD)"
 **Files:**
 - Modify: `SitRight/MainWindow.xaml.cs`
 
-**Step 1: 添加 BlurController 和 ValueMapper 集成（GREEN）**
+**设计说明：**
+- 移除 BlurController 引用（平滑在硬件端完成）
+- 移除 _displayTimer（不再需要定时器驱动平滑）
+- 数据流简化为：SerialService -> DeviceProtocol -> 直接 ValueMapper.Map(value) -> OverlayState
+- 每次收到硬件端数据时，立即映射并更新 OverlayState
+
+**Step 1: 添加 ValueMapper 集成（GREEN）**
 
 ```csharp
 using System.Windows;
@@ -702,12 +472,10 @@ public partial class MainWindow : Window
     public DeviceStateManager StateManager { get; } = new();
 
     // 任务C新增的服务
-    private readonly BlurController _blurController;
     private readonly ValueMapper _valueMapper;
     private readonly ConfigService _configService;
 
     private DispatcherTimer? _timeoutTimer;
-    private DispatcherTimer? _displayTimer;
 
     public MainWindow()
     {
@@ -717,13 +485,11 @@ public partial class MainWindow : Window
         _configService = new ConfigService();
         var config = _configService.Load();
 
-        _blurController = new BlurController(alpha: config.SmoothingAlpha);
         _valueMapper = new ValueMapper(
             hintStartLevel: config.HintStartLevel,
             urgentLevel: config.UrgentLevel);
 
         InitializeTimeoutTimer(config.TimeoutThresholdMs);
-        InitializeDisplayTimer(config.DisplayRefreshIntervalMs);
         BindEvents();
 
         Log("应用程序已启动 - 业务逻辑层已加载");
@@ -739,33 +505,23 @@ public partial class MainWindow : Window
         _timeoutTimer.Start();
     }
 
-    private void InitializeDisplayTimer(int intervalMs)
-    {
-        _displayTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(intervalMs)
-        };
-        _displayTimer.Tick += (s, e) =>
-        {
-            _blurController.Tick();
-            UpdateOverlayState();
-        };
-        _displayTimer.Start();
-    }
-
     private void BindEvents()
     {
         // SerialService 事件处理
+        // 数据流：SerialService -> DeviceProtocol -> ValueMapper.Map(blurLevel) -> OverlayState
         SerialService.OnLineReceived += line =>
         {
             if (Protocol.TryParse(line, out var value))
             {
                 StateManager.ReceiveRawValue(value);
-                _blurController.PushRawValue(value);
                 Dispatcher.Invoke(() =>
                 {
                     RawValueText.Text = value.ToString();
                     LastReceiveTimeText.Text = DateTime.Now.ToString("HH:mm:ss");
+
+                    // 直接映射硬件端发来的 blurLevel（已在硬件端完成平滑）
+                    var overlayState = _valueMapper.Map(value);
+                    OnOverlayStateChanged?.Invoke(overlayState);
                 });
             }
             else
@@ -780,15 +536,6 @@ public partial class MainWindow : Window
             Log($"串口错误: {ex.Message}");
         };
 
-        // BlurController 事件处理
-        _blurController.OnDisplayValueChanged += level =>
-        {
-            Dispatcher.Invoke(() =>
-            {
-                DisplayValueText.Text = level.ToString("F1");
-            });
-        };
-
         // DeviceStateManager 事件处理
         StateManager.OnStateChanged += state =>
         {
@@ -798,13 +545,6 @@ public partial class MainWindow : Window
                 UpdateStatusColor(state.ConnectionState);
             });
         };
-    }
-
-    private void UpdateOverlayState()
-    {
-        var state = _blurController.DisplayValue;
-        var overlayState = _valueMapper.Map(state);
-        OnOverlayStateChanged?.Invoke(overlayState);
     }
 
     // 供 OverlayWindow 订阅的事件
@@ -838,7 +578,6 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _timeoutTimer?.Stop();
-        _displayTimer?.Stop();
         SerialService.Dispose();
         base.OnClosed(e);
     }
@@ -857,7 +596,7 @@ Expected: BUILD SUCCEEDED
 
 ```bash
 git add SitRight/MainWindow.xaml.cs
-git commit -m "feat: 集成 BlurController 和 ValueMapper 到 MainWindow"
+git commit -m "feat: 集成 ValueMapper 到 MainWindow（直接映射硬件端 blurLevel）"
 ```
 
 ---
@@ -868,23 +607,16 @@ git commit -m "feat: 集成 BlurController 和 ValueMapper 到 MainWindow"
 
 | 文件 | 描述 | 对应完整计划章节 |
 |------|------|------------------|
-| `Services/BlurController.cs` | 平滑控制器 | 第5章、第11章、第12章 |
-| `Services/BlurControllerTests.cs` | BlurController 测试 | - |
-| `Services/ValueMapper.cs` | 数值映射器 | 第8章、第11章 |
-| `Services/ValueMapperTests.cs` | ValueMapper 测试 | - |
+| `Services/ValueMapper.cs` | 数值映射器（直接映射硬件端 blurLevel） | 第8章、第11章 |
+| `SitRight.Tests/ValueMapperTests.cs` | ValueMapper 测试 | - |
 | `Services/ConfigService.cs` | 配置服务 | 第16章 |
-| `Services/ConfigServiceTests.cs` | ConfigService 测试 | - |
+| `SitRight.Tests/ConfigServiceTests.cs` | ConfigService 测试 | - |
 | `config.json` | 默认配置文件 | 第12章 |
 
 **关键接口：**
 ```csharp
-// BlurController
-event OnDisplayValueChanged(double displayLevel)
-void PushRawValue(int value)
-void Tick()  // 由定时器驱动
-
-// ValueMapper
-OverlayState Map(double displayLevel)
+// ValueMapper - 直接映射硬件端发来的 blurLevel
+OverlayState Map(int blurLevel)
 
 // ConfigService
 AppConfig Load()
@@ -894,17 +626,17 @@ void Update(Action<AppConfig> updateAction)
 
 **数据流（对应第5章）：**
 ```
-MCU -> SerialService -> DeviceProtocol -> BlurController.PushRawValue()
-                                                    |
-                                                    v
-                                          BlurController.Tick() (定时器驱动)
-                                                    |
-                                                    v
-                                          ValueMapper.Map(displayLevel)
-                                                    |
-                                                    v
-                                          OnOverlayStateChanged(overlayState)
+MCU (硬件端平滑处理) -> SerialService -> DeviceProtocol -> ValueMapper.Map(blurLevel)
+                                                               |
+                                                               v
+                                                    OnOverlayStateChanged(overlayState)
 ```
+
+**架构决策记录：**
+- 平滑算法（指数滑动平均）在硬件端完成，PC 端不包含 BlurController
+- AppConfig 中移除 SmoothingAlpha 和 DisplayRefreshIntervalMs
+- MainWindow 中移除 _displayTimer，改为每次收到数据时即时映射
+- 数据流简化为：blurLevel -> ValueMapper -> OverlayState
 
 **下一步依赖:**
 - 任务D 将使用 `OnOverlayStateChanged` 事件来更新 OverlayWindow 显示

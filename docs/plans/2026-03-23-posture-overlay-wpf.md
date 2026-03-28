@@ -6,7 +6,7 @@
 
 **Architecture:**
 - 采用 MVVM 轻量架构，Model/ViewModel/View 解耦
-- Service 层处理串口通信、业务逻辑（BlurController）、配置管理
+- Service 层处理串口通信、数值映射（ValueMapper）、配置管理
 - OverlayWindow 作为独立全屏置顶窗口，仅通过遮罩透明度/颜色变化反馈（无文字提示）
 - 模拟模式可在无硬件环境下独立开发和演示
 - 配置文件保存在软件所在目录
@@ -367,10 +367,12 @@ using SitRight.Models;
 namespace SitRight.Utils;
 public static class ValueMapper
 {
+    // blurLevel 来自硬件端已平滑的值，软件端不再做平滑处理
     public static OverlayState Map(double displayLevel)
     {
         double normalized = Math.Clamp(displayLevel, 0, 100) / 100.0;
 
+        // 规范值：0.05 + Math.Pow(normalized, 1.4) * 0.65
         double maskOpacity = 0.05 + Math.Pow(normalized, 1.4) * 0.65;
 
         string maskColor;
@@ -414,98 +416,14 @@ git commit -m "feat: 实现 ValueMapper 数值映射 (TDD)"
 
 ---
 
-### Task 4: 实现 BlurController (TDD)
+### Task 4: 实现 AppConfig 模型
+
+> **注意：** 平滑算法在硬件端完成，软件端不包含 BlurController。硬件上报的 blurLevel 已经是平滑后的值，软件端直接通过 ValueMapper 映射到 OverlayState。
 
 **Files:**
-- Create: `SitRight.Tests/BlurControllerTests.cs`
-- Create: `SitRight/Services/BlurController.cs`
 - Create: `SitRight/Models/AppConfig.cs`
 
-**Step 1: RED - 写失败的测试**
-
-```csharp
-// SitRight.Tests/BlurControllerTests.cs
-using Xunit;
-using SitRight.Services;
-namespace SitRight.Tests;
-public class BlurControllerTests
-{
-    [Fact]
-    public void PushRawValue_SetsRawLevel()
-    {
-        var config = new AppConfig();
-        var controller = new BlurController(config);
-
-        controller.PushRawValue(50);
-
-        Assert.Equal(50, controller.RawLevel);
-    }
-
-    [Fact]
-    public void PushRawValue_SetsTargetLevel()
-    {
-        var config = new AppConfig();
-        var controller = new BlurController(config);
-
-        controller.PushRawValue(75);
-
-        Assert.Equal(75, controller.TargetLevel);
-    }
-
-    [Fact]
-    public void Update_WhenTimeout_DecreasesDisplayLevel()
-    {
-        var config = new AppConfig { TimeoutMs = 100 };
-        var controller = new BlurController(config);
-
-        controller.PushRawValue(80);
-        // Simulate timeout by waiting
-        Thread.Sleep(150);
-        controller.Update();
-
-        Assert.True(controller.DisplayLevel < 80);
-    }
-
-    [Fact]
-    public void Update_SmoothlyApproachesTarget()
-    {
-        var config = new AppConfig { SmoothAlpha = 0.5 };
-        var controller = new BlurController(config);
-
-        controller.PushRawValue(100);
-        controller.Update();
-        controller.Update();
-        controller.Update();
-
-        Assert.True(controller.DisplayLevel > 0);
-        Assert.True(controller.DisplayLevel < 100);
-    }
-
-    [Fact]
-    public void DisplayLevel_InitiallyZero()
-    {
-        var config = new AppConfig();
-        var controller = new BlurController(config);
-
-        Assert.Equal(0, controller.DisplayLevel);
-    }
-
-    [Fact]
-    public void PushRawValue_TriggersDisplayLevelChanged()
-    {
-        var config = new AppConfig();
-        var controller = new BlurController(config);
-        double? capturedLevel = null;
-        controller.DisplayLevelChanged += level => capturedLevel = level;
-
-        controller.PushRawValue(42);
-
-        Assert.NotNull(capturedLevel);
-    }
-}
-```
-
-**Step 2: 创建 AppConfig 模型**
+**Step 1: 创建 AppConfig 模型**
 
 ```csharp
 // SitRight/Models/AppConfig.cs
@@ -515,85 +433,17 @@ public class AppConfig
     public string DefaultComPort { get; set; } = "COM3";
     public int BaudRate { get; set; } = 115200;
     public int TimeoutMs { get; set; } = 2000;
-    public double SmoothAlpha { get; set; } = 0.18;
     public double MaxMaskOpacity { get; set; } = 0.70;
     public int SimulatedBlurLevel { get; set; } = 0;
     public bool IsSimulationMode { get; set; } = true;
 }
 ```
 
-**Step 3: 验证测试失败**
-
-Run: `dotnet test SitRight.Tests/BlurControllerTests.cs`
-Expected: Tests FAIL (BlurController doesn't exist)
-
-**Step 4: GREEN - 写最简代码**
-
-```csharp
-// SitRight/Services/BlurController.cs
-using SitRight.Models;
-namespace SitRight.Services;
-public class BlurController
-{
-    private double _rawLevel;
-    private double _targetLevel;
-    private double _displayLevel;
-    private DateTime _lastUpdateTime = DateTime.MinValue;
-    private readonly int _timeoutMs;
-    private readonly double _alpha;
-
-    public event Action<double>? DisplayLevelChanged;
-
-    public double RawLevel => _rawLevel;
-    public double DisplayLevel => _displayLevel;
-    public double TargetLevel => _targetLevel;
-
-    public BlurController(AppConfig config)
-    {
-        _timeoutMs = config.TimeoutMs;
-        _alpha = config.SmoothAlpha;
-    }
-
-    public void PushRawValue(int value)
-    {
-        _rawLevel = value;
-        _targetLevel = value;
-        _lastUpdateTime = DateTime.Now;
-        DisplayLevelChanged?.Invoke(_displayLevel);
-    }
-
-    public void Update()
-    {
-        if ((DateTime.Now - _lastUpdateTime).TotalMilliseconds > _timeoutMs)
-        {
-            _targetLevel = 0;
-        }
-
-        double diff = _targetLevel - _displayLevel;
-        if (Math.Abs(diff) < 0.5)
-        {
-            _displayLevel = _targetLevel;
-        }
-        else
-        {
-            _displayLevel += diff * _alpha;
-        }
-
-        DisplayLevelChanged?.Invoke(_displayLevel);
-    }
-}
-```
-
-**Step 5: 验证测试通过**
-
-Run: `dotnet test SitRight.Tests/BlurControllerTests.cs --verbosity normal`
-Expected: All tests PASS
-
-**Step 6: Commit**
+**Step 2: Commit**
 
 ```bash
-git add SitRight/Models/AppConfig.cs SitRight/Services/BlurController.cs SitRight.Tests/BlurControllerTests.cs
-git commit -m "feat: 实现 BlurController 平滑控制器 (TDD)"
+git add SitRight/Models/AppConfig.cs
+git commit -m "feat: 实现 AppConfig 配置模型"
 ```
 
 ---
@@ -777,26 +627,21 @@ namespace SitRight.Tests;
 public class OverlayViewModelTests
 {
     [Fact]
-    public void PushRawValue_UpdatesDisplayLevel()
+    public void PushRawValue_UpdatesOverlayState()
     {
-        var config = new AppConfig();
-        var blurController = new BlurController(config);
-        var viewModel = new OverlayViewModel(blurController);
+        var viewModel = new OverlayViewModel();
 
-        blurController.PushRawValue(50);
+        viewModel.UpdateFromHardware(50);
 
-        // DisplayLevel updates asynchronously via timer
         Assert.True(viewModel.DisplayLevel >= 0);
     }
 
     [Fact]
     public void MaskOpacity_IsAlwaysPositive()
     {
-        var config = new AppConfig();
-        var blurController = new BlurController(config);
-        var viewModel = new OverlayViewModel(blurController);
+        var viewModel = new OverlayViewModel();
 
-        blurController.PushRawValue(0);
+        viewModel.UpdateFromHardware(0);
 
         Assert.True(viewModel.MaskOpacity > 0);
     }
@@ -804,27 +649,23 @@ public class OverlayViewModelTests
     [Fact]
     public void SeverityLevel_IsInValidRange()
     {
-        var config = new AppConfig();
-        var blurController = new BlurController(config);
-        var viewModel = new OverlayViewModel(blurController);
+        var viewModel = new OverlayViewModel();
 
-        blurController.PushRawValue(100);
+        viewModel.UpdateFromHardware(100);
 
         Assert.True(viewModel.SeverityLevel >= 0);
         Assert.True(viewModel.SeverityLevel <= 3);
     }
 
     [Fact]
-    public void Cleanup_StopsUpdateTimer()
+    public void Cleanup_DisposesResources()
     {
-        var config = new AppConfig();
-        var blurController = new BlurController(config);
-        var viewModel = new OverlayViewModel(blurController);
+        var viewModel = new OverlayViewModel();
 
         viewModel.Cleanup();
 
         // Should not throw
-        blurController.PushRawValue(50);
+        viewModel.UpdateFromHardware(50);
     }
 }
 ```
@@ -839,17 +680,12 @@ Expected: Tests FAIL (OverlayViewModel doesn't exist)
 ```csharp
 // SitRight/ViewModels/OverlayViewModel.cs
 using System.Windows.Media;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using SitRight.Models;
-using SitRight.Services;
 using SitRight.Utils;
 namespace SitRight.ViewModels;
 public partial class OverlayViewModel : ViewModelBase
 {
-    private readonly BlurController _blurController;
-    private readonly DispatcherTimer _updateTimer;
-
     [ObservableProperty]
     private double _maskOpacity;
 
@@ -865,38 +701,20 @@ public partial class OverlayViewModel : ViewModelBase
     [ObservableProperty]
     private double _displayLevel;
 
-    public OverlayViewModel(BlurController blurController)
+    // 直接接收硬件端已平滑的 blurLevel，通过 ValueMapper 映射到 OverlayState
+    public void UpdateFromHardware(int blurLevel)
     {
-        _blurController = blurController;
-        _blurController.DisplayLevelChanged += OnDisplayLevelChanged;
-
-        _updateTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(33)
-        };
-        _updateTimer.Tick += (_, _) => _blurController.Update();
-        _updateTimer.Start();
+        DisplayLevel = blurLevel;
+        var state = ValueMapper.Map(blurLevel);
+        MaskOpacity = state.MaskOpacity;
+        MaskBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(state.MaskColor));
+        EdgeOpacity = state.EdgeOpacity;
+        SeverityLevel = state.SeverityLevel;
     }
-
-    private void OnDisplayLevelChanged(double level)
-    {
-        DispatcherHelper.Invoke(() =>
-        {
-            DisplayLevel = level;
-            var state = ValueMapper.Map(level);
-            MaskOpacity = state.MaskOpacity;
-            MaskBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(state.MaskColor));
-            EdgeOpacity = state.EdgeOpacity;
-            SeverityLevel = state.SeverityLevel;
-        });
-    }
-
-    public void PushRawValue(int value) => _blurController.PushRawValue(value);
 
     public void Cleanup()
     {
-        _updateTimer?.Stop();
-        _blurController.DisplayLevelChanged -= OnDisplayLevelChanged;
+        // 无需清理定时器，平滑在硬件端完成
     }
 }
 ```
@@ -1022,7 +840,6 @@ namespace SitRight.ViewModels;
 public partial class MainViewModel : ViewModelBase
 {
     private readonly SerialService _serialService;
-    private readonly BlurController _blurController;
     private readonly ConfigService _configService;
     private readonly AppConfig _config;
     private readonly DispatcherTimer _statusTimer;
@@ -1070,10 +887,9 @@ public partial class MainViewModel : ViewModelBase
         _configService = new ConfigService();
         _config = _configService.Load();
 
-        _blurController = new BlurController(_config);
         _serialService = new SerialService();
 
-        OverlayViewModel = new OverlayViewModel(_blurController);
+        OverlayViewModel = new OverlayViewModel();
 
         _isSimulationMode = _config.IsSimulationMode;
         SimulatedValue = _config.SimulatedBlurLevel;
@@ -1091,8 +907,9 @@ public partial class MainViewModel : ViewModelBase
     {
         RawValue = value;
         LastReceiveTime = DateTime.Now.ToString("HH:mm:ss.fff");
-        _blurController.PushRawValue(value);
-        DisplayValue = _blurController.DisplayLevel;
+        // value 是硬件端已平滑的 blurLevel，直接映射
+        OverlayViewModel.UpdateFromHardware(value);
+        DisplayValue = value;
         ConnectionStatus = "接收中";
     }
 
@@ -1112,7 +929,7 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnStatusTimerTick(object? sender, EventArgs e)
     {
-        DisplayValue = _blurController.DisplayLevel;
+        DisplayValue = OverlayViewModel.DisplayLevel;
     }
 
     [RelayCommand]
@@ -1171,7 +988,8 @@ public partial class MainViewModel : ViewModelBase
         _configService.Save(_config);
         if (IsSimulationMode)
         {
-            _blurController.PushRawValue(value);
+            // 模拟模式下直接传递模拟值，硬件端平滑由模拟器处理或跳过
+            OverlayViewModel.UpdateFromHardware(value);
         }
     }
 
@@ -1813,18 +1631,18 @@ git commit -m "feat: 添加发布配置"
 |------|--------|
 | DeviceProtocol | 9 tests |
 | ValueMapper | 10 tests |
-| BlurController | 6 tests |
+| AppConfig | - |
 | ConfigService | 2 tests |
 | OverlayViewModel | 4 tests |
 | MainViewModel | 7 tests |
 | SerialService | 5 tests |
-| **总计** | **43 tests** |
+| **总计** | **37 tests** |
 
 **执行顺序:**
 1. 项目骨架 + 测试项目 (Task 1)
 2. DeviceProtocol (Task 2) - TDD
 3. ValueMapper (Task 3) - TDD
-4. BlurController (Task 4) - TDD
+4. AppConfig (Task 4)
 5. ConfigService (Task 5) - TDD
 6. MVVM 基础设施 (Task 6)
 7. OverlayViewModel (Task 7) - TDD

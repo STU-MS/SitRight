@@ -386,6 +386,10 @@ public class OverlayState
     public double MessageOpacity { get; set; }
     public int SeverityLevel { get; set; }
 
+    /// <summary>
+    /// 将 blurLevel 映射为 Overlay 视觉参数。
+    /// 注意：blurLevel 已由硬件端完成平滑处理，软件端直接使用即可。
+    /// </summary>
     public static OverlayState FromDisplayLevel(double level, int hintStart = 30, int urgentLevel = 80)
     {
         var normalized = level / 100.0;
@@ -467,8 +471,6 @@ public class AppConfigTests
         Assert.Equal("COM1", config.DefaultComPort);
         Assert.Equal(115200, config.BaudRate);
         Assert.Equal(2000, config.TimeoutThresholdMs);
-        Assert.Equal(33, config.DisplayRefreshIntervalMs);
-        Assert.Equal(0.18, config.SmoothingAlpha);
         Assert.Equal(0.70, config.MaxMaskOpacity);
         Assert.Equal(30, config.HintStartLevel);
         Assert.Equal(80, config.UrgentLevel);
@@ -493,8 +495,6 @@ public class AppConfig
     public string DefaultComPort { get; set; } = "COM1";
     public int BaudRate { get; set; } = 115200;
     public int TimeoutThresholdMs { get; set; } = 2000;
-    public int DisplayRefreshIntervalMs { get; set; } = 33;
-    public double SmoothingAlpha { get; set; } = 0.18;
     public double MaxMaskOpacity { get; set; } = 0.70;
     public int HintStartLevel { get; set; } = 30;
     public int UrgentLevel { get; set; } = 80;
@@ -571,5 +571,5 @@ git commit -m "chore: 创建 Services/ViewModels/Utils 目录占位文件"
 
 **下一步依赖:**
 - 成员2 将在 Services 目录实现 SerialService、DeviceProtocol、DeviceStateManager
-- 成员3 将在 Services 目录实现 BlurController、ValueMapper、ConfigService
+- 成员3 将在 Services 目录实现 ValueMapper、ConfigService
 - 成员4 将在 ViewModels 和根目录实现 OverlayViewModel、OverlayWindow

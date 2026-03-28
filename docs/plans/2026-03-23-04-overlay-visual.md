@@ -7,7 +7,7 @@
 > 2. 再写实现，运行验证 PASS
 > 3. 重构代码
 
-**Goal:** 实现全屏 OverlayWindow 遮罩窗口和 OverlayViewModel，支持 BlurController 输出的平滑视觉反馈
+**Goal:** 实现全屏 OverlayWindow 遮罩窗口和 OverlayViewModel，直接映射硬件端 blurLevel 的视觉反馈
 
 **Architecture:**
 - OverlayWindow 是一个全屏、置顶、无边框、透明背景的窗口（第8章 Overlay设计）
@@ -24,7 +24,6 @@
 
 **Files:**
 - Read: `SitRight/Models/OverlayState.cs`
-- Read: `SitRight/Services/BlurController.cs`
 
 **Step 1: 验证项目编译**
 
@@ -502,7 +501,6 @@ public class MainViewModelTests
     private readonly Mock<ISerialService> _mockSerial;
     private readonly DeviceProtocol _protocol;
     private readonly DeviceStateManager _stateManager;
-    private readonly BlurController _blurController;
     private readonly ValueMapper _valueMapper;
     private readonly ConfigService _configService;
     private readonly MainViewModel _viewModel;
@@ -514,7 +512,6 @@ public class MainViewModelTests
 
         _protocol = new DeviceProtocol();
         _stateManager = new DeviceStateManager();
-        _blurController = new BlurController();
         _valueMapper = new ValueMapper();
         _configService = new ConfigService();
 
@@ -522,7 +519,6 @@ public class MainViewModelTests
             _mockSerial.Object,
             _protocol,
             _stateManager,
-            _blurController,
             _valueMapper,
             _configService);
     }
@@ -571,12 +567,12 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public void SimulateValue_WhenSimulationMode_PushesToBlurController()
+    public void SimulateValue_WhenSimulationMode_MapsDirectly()
     {
         _viewModel.IsSimulationMode = true;
         _viewModel.SimulateValue(50);
 
-        Assert.Equal(50, _viewModel.RawValueText);
+        Assert.Equal("50", _viewModel.RawValueText);
     }
 
     [Fact]
@@ -660,7 +656,6 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ISerialService _serialService;
     private readonly DeviceProtocol _protocol;
     private readonly DeviceStateManager _stateManager;
-    private readonly BlurController _blurController;
     private readonly ValueMapper _valueMapper;
 
     private string _statusText = "Disconnected";
@@ -723,14 +718,12 @@ public class MainViewModel : INotifyPropertyChanged
         ISerialService serialService,
         DeviceProtocol protocol,
         DeviceStateManager stateManager,
-        BlurController blurController,
         ValueMapper valueMapper,
         ConfigService configService)
     {
         _serialService = serialService;
         _protocol = protocol;
         _stateManager = stateManager;
-        _blurController = blurController;
         _valueMapper = valueMapper;
 
         BindEvents();
@@ -744,9 +737,14 @@ public class MainViewModel : INotifyPropertyChanged
             if (_protocol.TryParse(line, out var value))
             {
                 _stateManager.ReceiveRawValue(value);
-                _blurController.PushRawValue(value);
+                // 直接映射硬件端 blurLevel，平滑算法在硬件端完成
                 RawValueText = value.ToString();
                 LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
+
+                // 直接映射到 OverlayState
+                var overlayState = _valueMapper.Map(value);
+                DisplayValueText = value.ToString("F1");
+                OnOverlayStateChanged?.Invoke(overlayState);
             }
         };
 
@@ -755,14 +753,6 @@ public class MainViewModel : INotifyPropertyChanged
         {
             StatusText = state.ConnectionState.ToString();
             OnConnectionStateChanged?.Invoke(state.ConnectionState);
-        };
-
-        // 显示值变更处理 - 触发 Overlay 更新
-        _blurController.OnDisplayValueChanged += level =>
-        {
-            DisplayValueText = level.ToString("F1");
-            var overlayState = _valueMapper.Map(level);
-            OnOverlayStateChanged?.Invoke(overlayState);
         };
     }
 
@@ -791,9 +781,13 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (_isSimulationMode)
         {
-            _blurController.PushRawValue(value);
+            // 直接映射，不经过 BlurController
             RawValueText = value.ToString();
             LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
+
+            var overlayState = _valueMapper.Map(value);
+            DisplayValueText = value.ToString();
+            OnOverlayStateChanged?.Invoke(overlayState);
         }
     }
 
@@ -857,15 +851,13 @@ public partial class MainWindow : Window
         var serialService = new SerialService();
         var protocol = new DeviceProtocol();
         var stateManager = new DeviceStateManager(config.TimeoutThresholdMs);
-        var blurController = new BlurController(alpha: config.SmoothingAlpha);
         var valueMapper = new ValueMapper(config.HintStartLevel, config.UrgentLevel);
 
-        // 创建 ViewModel
+        // 创建 ViewModel（平滑算法在硬件端完成，软件端直接映射 blurLevel）
         _viewModel = new MainViewModel(
             serialService,
             protocol,
             stateManager,
-            blurController,
             valueMapper,
             configService);
 
@@ -890,7 +882,7 @@ public partial class MainWindow : Window
         timeoutTimer.Tick += (s, e) => _viewModel.StatusText; // 通过 ViewModel 访问触发检查
         timeoutTimer.Start();
 
-        // 显示更新定时器（由 BlurController 的 OnDisplayValueChanged 事件驱动，这里仅作保险）
+        // 显示更新定时器（数据流为直接映射，由 OnLineReceived 事件驱动）
     }
 
     private void InitializeOverlay()
@@ -1014,16 +1006,11 @@ public class IntegrationTests
     [Fact]
     public void FullPipeline_RawValueToOverlayState()
     {
-        // 模拟完整数据流：RawValue -> BlurController -> ValueMapper -> OverlayState
-        var blurController = new BlurController(alpha: 1.0); // immediate for test
+        // 模拟完整数据流：RawValue -> ValueMapper -> OverlayState（平滑算法在硬件端完成）
         var valueMapper = new ValueMapper(hintStartLevel: 30, urgentLevel: 80);
 
-        // Push raw value
-        blurController.PushRawValue(100);
-        blurController.Tick();
-
-        // Map to overlay state
-        var overlayState = valueMapper.Map(blurController.DisplayValue);
+        // 直接映射硬件端输出的 blurLevel
+        var overlayState = valueMapper.Map(100);
 
         // Verify
         Assert.Equal(100, overlayState.MaskOpacity, 0.1);
@@ -1032,35 +1019,11 @@ public class IntegrationTests
     }
 
     [Fact]
-    public void FullPipeline_SmoothTransition()
-    {
-        var blurController = new BlurController(alpha: 0.5);
-        var valueMapper = new ValueMapper();
-
-        blurController.PushRawValue(100);
-
-        // First tick
-        blurController.Tick();
-        var state1 = valueMapper.Map(blurController.DisplayValue);
-
-        // Second tick
-        blurController.Tick();
-        var state2 = valueMapper.Map(blurController.DisplayValue);
-
-        // Should be converging
-        Assert.True(state2.MaskOpacity > state1.MaskOpacity);
-    }
-
-    [Fact]
     public void FullPipeline_LowValue_NoMessage()
     {
-        var blurController = new BlurController(alpha: 1.0);
         var valueMapper = new ValueMapper(hintStartLevel: 30, urgentLevel: 80);
 
-        blurController.PushRawValue(10);
-        blurController.Tick();
-
-        var overlayState = valueMapper.Map(blurController.DisplayValue);
+        var overlayState = valueMapper.Map(10);
 
         Assert.True(overlayState.MaskOpacity < 0.1);
         Assert.Empty(overlayState.MessageText);
@@ -1138,7 +1101,6 @@ SitRight/
 │  ├─ SerialService.cs
 │  ├─ DeviceProtocol.cs
 │  ├─ DeviceStateManager.cs
-│  ├─ BlurController.cs
 │  ├─ ValueMapper.cs
 │  └─ ConfigService.cs
 ├─ ViewModels/
@@ -1149,9 +1111,9 @@ SitRight/
 
 **数据流（对应第5章、第10章）：**
 ```
-MCU → SerialService → DeviceProtocol → BlurController → ValueMapper → OverlayViewModel → OverlayWindow
-         ↓                                    ↓
-    MainViewModel ← DeviceStateManager ← BlurController
-         ↓
-    MainWindow (状态显示)
+MCU(含平滑算法) → SerialService → DeviceProtocol → ValueMapper → OverlayViewModel → OverlayWindow
+                       ↓
+                MainViewModel ← DeviceStateManager
+                       ↓
+                MainWindow (状态显示)
 ```
