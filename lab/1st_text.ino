@@ -1,14 +1,14 @@
 #include <Wire.h>
-const int MPU_addr = 0x68;  // MPU6050 µØÖ·
+const int MPU_addr = 0x68;  // MPU6050 åœ°å€
 int16_t AcX, AcY, AcZ, Tmp, GyX, GyY, GyZ;
 float ax, ay, az, gx, gy, gz;
 float angleX, angleY;
 
 void setup() {
   Wire.begin();
-  Serial.begin(115200);  // ²¨ÌØÂÊ 115200
+  Serial.begin(115200);  // ä½ è¦çš„æ³¢ç‰¹ç‡ 115200
   
-  // ³õÊ¼»¯MPU6050
+  // åˆå§‹åŒ–MPU6050
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x6B);
   Wire.write(0);
@@ -16,7 +16,7 @@ void setup() {
 }
 
 void loop() {
-  // ¶ÁÈ¡´«¸ĞÆ÷Êı¾İ
+  // è¯»å–ä¼ æ„Ÿå™¨æ•°æ®
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x3B);
   Wire.endTransmission(false);
@@ -26,18 +26,18 @@ void loop() {
   AcY = Wire.read() << 8 | Wire.read();
   AcZ = Wire.read() << 8 | Wire.read();
   
-  // ¼ÆËã½Ç¶È
+  // è®¡ç®—è§’åº¦
   ax = AcX / 16384.0;
   ay = AcY / 16384.0;
   az = AcZ / 16384.0;
   angleX = atan2(ay, az) * 180 / PI;
   angleY = atan2(-ax, sqrt(ay*ay + az*az)) * 180 / PI;
 
-  // Êä³öÊı¾İ
-  Serial.print("XÖá½Ç¶È: ");
+  // è¾“å‡ºæ•°æ®
+  Serial.print("Xè½´è§’åº¦: ");
   Serial.print(angleX);
-  Serial.print("  |  YÖá½Ç¶È: ");
+  Serial.print("  |  Yè½´è§’åº¦: ");
   Serial.println(angleY);
 
-  delay(200);  // 200ms ÑÓ³Ù
+  delay(200);  // ä½ è¦çš„ 200ms å»¶è¿Ÿ
 }
