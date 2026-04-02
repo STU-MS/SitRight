@@ -12,6 +12,7 @@
 **Architecture:**
 - **平滑算法在硬件端完成**，PC 端不包含 BlurController，收到的 blurLevel 已经是平滑后的值
 - ValueMapper 将硬件端发来的 blurLevel 直接映射为 OverlayState 视觉参数（第8章 Overlay设计、第11章 ValueMapper说明）
+- 第一版不包含提示文字，OverlayState 不使用 MessageText/MessageOpacity 字段
 - ConfigService 处理 JSON 配置文件的读写（第16章 配置与可扩展性）
 
 **Tech Stack:** .NET 8.0 / WPF / System.Text.Json / xUnit
@@ -87,7 +88,6 @@ public class ValueMapperTests
     {
         var state = _mapper.Map(0);
         Assert.True(state.MaskOpacity < 0.1);
-        Assert.Equal(string.Empty, state.MessageText);
     }
 
     [Fact]
@@ -95,7 +95,6 @@ public class ValueMapperTests
     {
         var state = _mapper.Map(100);
         Assert.True(state.MaskOpacity > 0.6);
-        Assert.NotEmpty(state.MessageText);
     }
 
     [Fact]
@@ -104,38 +103,20 @@ public class ValueMapperTests
         var state = _mapper.Map(50);
         Assert.True(state.MaskOpacity > 0.2);
         Assert.True(state.MaskOpacity < 0.5);
-        Assert.Equal("请调整坐姿", state.MessageText);
     }
 
     [Fact]
-    public void Map_LevelBelowHintStart_NoMessage()
+    public void Map_LevelBelowHintStart_NoBlock()
     {
         var state = _mapper.Map(20);
-        Assert.Equal(string.Empty, state.MessageText);
-        Assert.Equal(0, state.MessageOpacity);
+        Assert.False(state.BlockInput);
     }
 
     [Fact]
-    public void Map_LevelAtHintStart_BeginsShowingMessage()
-    {
-        var state = _mapper.Map(30);
-        Assert.NotEmpty(state.MessageText);
-        Assert.True(state.MessageOpacity > 0);
-    }
-
-    [Fact]
-    public void Map_LevelBelowUrgent_ShowsNormalMessage()
-    {
-        var state = _mapper.Map(60);
-        Assert.Equal("请调整坐姿", state.MessageText);
-        Assert.Equal(2, state.SeverityLevel);
-    }
-
-    [Fact]
-    public void Map_LevelAboveUrgent_ShowsUrgentMessage()
+    public void Map_LevelAboveUrgent_BlocksInput()
     {
         var state = _mapper.Map(90);
-        Assert.Equal("请立即调整坐姿！", state.MessageText);
+        Assert.True(state.BlockInput);
         Assert.Equal(3, state.SeverityLevel);
     }
 
@@ -453,7 +434,8 @@ git commit -m "feat: 实现 ConfigService 配置服务 (TDD)"
 - 移除 _displayTimer（不再需要定时器驱动平滑）
 - 数据流简化为：SerialService -> DeviceProtocol -> 直接 ValueMapper.Map(value) -> OverlayState
 - 每次收到硬件端数据时，立即映射并更新 OverlayState
-- 注意：串口协议为双通道，ACK/ERR 校准回包当前未实现解析，**需在后续校准 UI 任务中补充 DeviceProtocol 的 ACK/ERR 解析能力**
+- 注意：串口协议为双通道，ACK/ERR 校准回包将在 **Task 12** 中补充实现（详见 `docs/plans/2026-04-01-serial-calibration-design.md`）
+- 第一版不使用 OverlayState 的 MessageText/MessageOpacity 字段
 
 **Step 1: 添加 ValueMapper 集成（GREEN）**
 

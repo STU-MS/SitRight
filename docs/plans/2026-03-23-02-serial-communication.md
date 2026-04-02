@@ -797,7 +797,13 @@ git commit -m "feat: 集成串口服务到 MainWindow"
 | 校准回包 ACK | `ACK:SET_NORMAL,ANGLE:12.34` | **未实现**，当前被 TryParse 视为非法行 |
 | 校准回包 ERR | `ERR:BUSY` | **未实现**，当前被 TryParse 视为非法行 |
 
-**待办：** 需扩展 DeviceProtocol 增加 ACK/ERR 解析能力，并在 DeviceStateManager 中新增校准状态管理，以支持校准 UI 功能。详见 `docs/plans/2026-04-01-serial-calibration-design.md`。
+**待办：** ACK/ERR 校准协议解析将在 WPF 总计划 **Task 12** 中补充实现，包含：
+- `DeviceProtocol.TryParseFull()` 扩展方法，支持 ACK/ERR 行解析
+- `CalibrationData` 校准状态模型
+- `SerialService.SendLine()` 发送校准命令到 MCU
+- 校准 UI（MainWindow 新增校准控制区域）
+
+详见 `docs/plans/2026-04-01-serial-calibration-design.md`。
 
 **服务接口事件（供任务C/D订阅）:**
 ```csharp
@@ -812,5 +818,7 @@ OnStateChanged(DeviceState state) // 状态变更
 ```
 
 **下一步依赖:**
-- 任务C 将使用 SerialService.OnLineReceived 事件，订阅后推送值到 BlurController
+- 任务C 将使用 SerialService.OnLineReceived 事件，订阅后推送值到 ValueMapper
 - 任务D 将使用 DeviceState 在 UI 中显示状态
+- **Task 12** 将扩展 DeviceProtocol 实现 ACK/ERR 校准协议解析（详见 `docs/plans/2026-04-01-serial-calibration-design.md`）
+- **Task 13** 将实现显示器选择功能

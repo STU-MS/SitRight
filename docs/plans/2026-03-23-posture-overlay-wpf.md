@@ -2,12 +2,12 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 实现一个基于 WPF 的坐姿矫正仪 PC 上位机，支持串口通信、全屏 Overlay 视觉反馈、模拟模式
+**Goal:** 实现一个基于 WPF 的坐姿矫正仪 PC 上位机，支持串口通信（含校准协议 ACK/ERR）、全屏 Overlay 视觉反馈（无文字提示，仅遮罩/颜色/边缘渐变）、显示器选择、模拟模式
 
 **Architecture:**
 - 采用 MVVM 轻量架构，Model/ViewModel/View 解耦
 - Service 层处理串口通信、数值映射（ValueMapper）、配置管理
-- OverlayWindow 作为独立全屏置顶窗口，仅通过遮罩透明度/颜色变化反馈（无文字提示）
+- OverlayWindow 作为独立全屏置顶窗口，仅通过遮罩透明度/颜色/边缘渐变变化反馈（无文字提示）
 - 模拟模式可在无硬件环境下独立开发和演示
 - 配置文件保存在软件所在目录
 - **TDD 工作流**：每写一个测试 → 验证失败 → 写最简代码通过 → 重构
@@ -91,6 +91,8 @@ git commit -m "feat: 创建项目骨架和测试项目"
 ---
 
 ### Task 2: 实现 DeviceProtocol (TDD)
+
+> **注意：** 串口协议为双通道设计。运行态输出纯数字（blurLevel），校准回包输出 `ACK:`/`ERR:` 开头的文本行。当前 Task 2 仅实现纯数字解析。ACK/ERR 解析和校准 UI 在 **Task 12: 校准协议与 UI** 中补充实现。详见 `docs/plans/2026-04-01-serial-calibration-design.md`。
 
 **Files:**
 - Create: `SitRight.Tests/DeviceProtocolTests.cs`
@@ -353,6 +355,7 @@ public class OverlayState
     public string MaskColor { get; set; } = "#00FFFFFF";
     public double EdgeOpacity { get; set; }
     public int SeverityLevel { get; set; }
+    // 第一版不包含 MessageText/MessageOpacity，视觉反馈仅通过遮罩和颜色传达
 }
 ```
 
@@ -622,8 +625,6 @@ git commit -m "feat: 添加 MVVM 基础设施"
 ```csharp
 // SitRight.Tests/OverlayViewModelTests.cs
 using Xunit;
-using SitRight.Models;
-using SitRight.Services;
 using SitRight.ViewModels;
 namespace SitRight.Tests;
 public class OverlayViewModelTests
@@ -704,6 +705,7 @@ public partial class OverlayViewModel : ViewModelBase
     private double _displayLevel;
 
     // 直接接收硬件端已平滑的 blurLevel，通过 ValueMapper 映射到 OverlayState
+    // 第一版无文字提示，仅通过遮罩/颜色/边缘渐变反馈
     public void UpdateFromHardware(int blurLevel)
     {
         DisplayLevel = blurLevel;
@@ -1456,7 +1458,7 @@ public partial class MainWindow : Window
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
-        WindowState="Maximized"
+        WindowState="Normal"
         IsHitTestVisible="False"
         Visibility="{Binding IsOverlayVisible, Converter={StaticResource BoolToVisibilityConverter}}">
     <Grid>
@@ -1476,7 +1478,7 @@ public partial class MainWindow : Window
             </Rectangle.Fill>
         </Rectangle>
 
-        <!-- 调试信息（小字） -->
+        <!-- 调试信息（小字，默认隐藏） -->
         <TextBlock x:Name="DebugText"
                    Text="{Binding DisplayValue, StringFormat=当前模糊度: {0:F1}}"
                    FontSize="14"
@@ -1505,6 +1507,18 @@ public partial class OverlayWindow : Window
     public void SetViewModel(OverlayViewModel viewModel)
     {
         DataContext = viewModel;
+    }
+
+    /// <summary>
+    /// 将 Overlay 窗口定位到目标显示器
+    /// </summary>
+    public void SetTargetScreen(double x, double y, double width, double height)
+    {
+        WindowState = WindowState.Normal;
+        Left = x;
+        Top = y;
+        Width = width;
+        Height = height;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -1625,8 +1639,8 @@ git commit -m "feat: 添加发布配置"
 
 ## 计划完成摘要
 
-**总任务数:** 11
-**预计文件数:** 28+ 个文件
+**总任务数:** 13
+**预计文件数:** 30+ 个文件
 
 **TDD 测试覆盖:**
 | 组件 | 测试数 |
@@ -1638,11 +1652,12 @@ git commit -m "feat: 添加发布配置"
 | OverlayViewModel | 4 tests |
 | MainViewModel | 7 tests |
 | SerialService | 5 tests |
-| **总计** | **37 tests** |
+| CalibrationProtocol | 7+ tests |
+| **总计** | **44+ tests** |
 
 **执行顺序:**
 1. 项目骨架 + 测试项目 (Task 1)
-2. DeviceProtocol (Task 2) - TDD
+2. DeviceProtocol (Task 2) - TDD - 运行态纯数字解析
 3. ValueMapper (Task 3) - TDD
 4. AppConfig (Task 4)
 5. ConfigService (Task 5) - TDD
@@ -1652,10 +1667,201 @@ git commit -m "feat: 添加发布配置"
 9. SerialService (Task 9) - TDD
 10. UI 层 (Task 10)
 11. 发布配置 (Task 11)
+12. **校准协议解析与校准 UI (Task 12) - TDD** ← 新增
+13. **显示器选择功能 (Task 13)** ← 新增
 
 ---
 
 **Plan complete and saved to `docs/plans/2026-03-23-posture-overlay-wpf.md`.**
+
+---
+
+### Task 12: 校准协议解析与校准 UI（TDD）
+
+> **前置依赖:** Task 2 (DeviceProtocol), Task 9 (SerialService)
+> **详细设计:** `docs/plans/2026-04-01-serial-calibration-design.md`
+
+**Files:**
+- Modify: `SitRight/Services/DeviceProtocol.cs` (扩展 ACK/ERR 解析)
+- Create: `SitRight/Models/CalibrationData.cs`
+- Modify: `SitRight/Services/ISerialService.cs` (新增 SendLine)
+- Modify: `SitRight/Services/SerialService.cs` (实现 SendLine)
+- Create: `SitRight.Tests/CalibrationProtocolTests.cs`
+
+**Step 1: RED - 写失败的测试**
+
+```csharp
+// SitRight.Tests/CalibrationProtocolTests.cs
+using Xunit;
+using SitRight.Services;
+namespace SitRight.Tests;
+public class CalibrationProtocolTests
+{
+    private readonly DeviceProtocol _protocol = new();
+
+    [Fact]
+    public void TryParseFull_ACK_SetNormal_ReturnsCalibrationAck()
+    {
+        var result = _protocol.TryParseFull("ACK:SET_NORMAL,ANGLE:12.34");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ProtocolLineType.CalibrationAck, result.LineType);
+        Assert.Equal("SET_NORMAL", result.Ack!.Command);
+        Assert.Equal("12.34", result.Ack.Fields["ANGLE"]);
+    }
+
+    [Fact]
+    public void TryParseFull_ERR_Busy_ReturnsCalibrationErr()
+    {
+        var result = _protocol.TryParseFull("ERR:BUSY");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ProtocolLineType.CalibrationErr, result.LineType);
+        Assert.Equal("BUSY", result.Err!.ErrorCode);
+    }
+
+    [Fact]
+    public void TryParseFull_RuntimeData_ReturnsValue()
+    {
+        var result = _protocol.TryParseFull("37");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ProtocolLineType.RuntimeData, result.LineType);
+        Assert.Equal(37, result.RuntimeValue);
+    }
+
+    [Fact]
+    public void TryParseFull_InvalidInput_ReturnsFalse()
+    {
+        var result = _protocol.TryParseFull("GARBAGE");
+
+        Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public void TryParseFull_NullInput_ReturnsFalse()
+    {
+        var result = _protocol.TryParseFull(null!);
+
+        Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public void TryParseFull_ACK_MultipleFields_ParsesAll()
+    {
+        var result = _protocol.TryParseFull("ACK:GET_STATUS,NORMAL:12.34,SLOUCH:25.67,STATUS:CALIBRATED");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("GET_STATUS", result.Ack!.Command);
+        Assert.Equal("12.34", result.Ack.Fields["NORMAL"]);
+        Assert.Equal("25.67", result.Ack.Fields["SLOUCH"]);
+        Assert.Equal("CALIBRATED", result.Ack.Fields["STATUS"]);
+    }
+
+    [Fact]
+    public void CalibrationData_InitialState_IsNotCalibrated()
+    {
+        var data = new CalibrationData();
+        Assert.Equal(CalibrationState.NotCalibrated, data.State);
+        Assert.Null(data.NormalAngle);
+        Assert.Null(data.SlouchAngle);
+    }
+}
+```
+
+**Step 2: 验证测试失败**
+
+Run: `dotnet test SitRight.Tests/CalibrationProtocolTests.cs`
+Expected: Tests FAIL
+
+**Step 3: GREEN - 实现扩展**
+
+参照 `docs/plans/2026-04-01-serial-calibration-design.md` 第 3 节实现 DeviceProtocol 扩展和 CalibrationData 模型。
+
+**Step 4: SerialService 新增 SendLine**
+
+```csharp
+// ISerialService 新增
+void SendLine(string line);
+
+// SerialService 新增实现
+public void SendLine(string line)
+{
+    if (_serialPort?.IsOpen == true)
+    {
+        _serialPort.WriteLine(line);
+    }
+}
+```
+
+**Step 5: 验证测试通过**
+
+Run: `dotnet test SitRight.Tests/CalibrationProtocolTests.cs`
+Expected: All tests PASS
+
+**Step 6: 校准 UI（MainWindow 新增校准 GroupBox）**
+
+在 MainWindow.xaml 的串口连接区下方新增"校准控制"区域：
+- "校准坐正" 按钮：发送 `CMD:SET_NORMAL`，显示返回角度
+- "校准驼背" 按钮：发送 `CMD:SET_SLOUCH`，显示返回角度
+- 校准状态文本：NotCalibrated / NormalSet / FullyCalibrated
+- 错误提示：显示 ERR 内容
+
+**Step 7: Commit**
+
+```bash
+git add SitRight/Services/DeviceProtocol.cs SitRight/Models/CalibrationData.cs
+git add SitRight.Tests/CalibrationProtocolTests.cs
+git commit -m "feat: 实现校准协议解析与校准 UI (TDD)"
+```
+
+---
+
+### Task 13: 显示器选择功能
+
+> **前置依赖:** Task 10 (UI 层)
+
+**Files:**
+- Modify: `SitRight/Models/AppConfig.cs` (新增 TargetMonitorIndex)
+- Modify: `SitRight/Views/MainWindow.xaml` (新增显示器下拉框)
+- Modify: `SitRight/Views/OverlayWindow.xaml.cs` (SetTargetScreen)
+
+**Step 1: AppConfig 新增字段**
+
+```csharp
+public int TargetMonitorIndex { get; set; } = 0;
+```
+
+**Step 2: MainWindow 新增显示器选择**
+
+在串口连接区域下方新增：
+- ComboBox "目标显示器"：列出所有 `Screen.AllScreens`，显示设备名 + 分辨率
+- SelectionChanged 事件：更新 OverlayWindow 的位置和大小
+
+**Step 3: OverlayWindow 定位到目标显示器**
+
+```csharp
+// 替代 WindowState="Maximized"，手动设置窗口到目标屏幕
+public void SetTargetScreen(int screenIndex)
+{
+    var screens = System.Windows.Forms.Screen.AllScreens;
+    if (screenIndex < 0 || screenIndex >= screens.Length) screenIndex = 0;
+
+    var bounds = screens[screenIndex].Bounds;
+    WindowState = WindowState.Normal;
+    Left = bounds.Left;
+    Top = bounds.Top;
+    Width = bounds.Width;
+    Height = bounds.Height;
+}
+```
+
+**Step 4: Commit**
+
+```bash
+git add SitRight/Models/AppConfig.cs SitRight/Views/MainWindow.xaml SitRight/Views/OverlayWindow.xaml.cs
+git commit -m "feat: 实现显示器选择功能"
+```
 
 **Two execution options:**
 

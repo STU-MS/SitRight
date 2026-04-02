@@ -571,6 +571,8 @@ git commit -m "chore: 创建 Services/ViewModels/Utils 目录占位文件"
 
 **下一步依赖:**
 - 成员2 将在 Services 目录实现 SerialService、DeviceProtocol、DeviceStateManager
-  - 注意：串口协议为双通道（运行态纯数字 + 校准回包 ACK/ERR），当前 DeviceProtocol 仅处理纯数字，**ACK/ERR 解析尚未实现**，需在后续校准 UI 任务中补充
+  - 注意：串口协议为双通道（运行态纯数字 + 校准回包 ACK/ERR），当前 DeviceProtocol 仅处理纯数字，**ACK/ERR 解析将在 Task 12 中补充实现**，详见 `docs/plans/2026-04-01-serial-calibration-design.md`
 - 成员3 将在 Services 目录实现 ValueMapper、ConfigService
 - 成员4 将在 ViewModels 和根目录实现 OverlayViewModel、OverlayWindow
+  - 注意：第一版 OverlayWindow 不包含提示文字，视觉反馈仅通过遮罩透明度/颜色/边缘渐变传达
+  - 显示器选择功能将在 Task 13 中实现
