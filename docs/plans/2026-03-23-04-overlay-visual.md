@@ -61,7 +61,6 @@ public class OverlayViewModelTests
         Assert.False(vm.IsVisible);
         Assert.Equal(0, vm.MaskOpacity);
         Assert.Equal(0, vm.EdgeOpacity);
-        Assert.Equal(0, vm.MessageOpacity);
     }
 
     [Fact]
@@ -69,7 +68,6 @@ public class OverlayViewModelTests
     {
         var vm = new OverlayViewModel();
         Assert.Equal("#FFFFFF", vm.MaskColor);
-        Assert.Equal(string.Empty, vm.MessageText);
     }
 
     [Fact]
@@ -81,8 +79,6 @@ public class OverlayViewModelTests
             MaskOpacity = 0.5,
             MaskColor = "#E0E0E0",
             EdgeOpacity = 0.2,
-            MessageText = "请调整坐姿",
-            MessageOpacity = 0.8,
             SeverityLevel = 2
         };
 
@@ -91,8 +87,6 @@ public class OverlayViewModelTests
         Assert.Equal(0.5, vm.MaskOpacity);
         Assert.Equal("#E0E0E0", vm.MaskColor);
         Assert.Equal(0.2, vm.EdgeOpacity);
-        Assert.Equal("请调整坐姿", vm.MessageText);
-        Assert.Equal(0.8, vm.MessageOpacity);
         Assert.Equal(2, vm.SeverityLevel);
     }
 
@@ -100,15 +94,15 @@ public class OverlayViewModelTests
     public void UpdateFrom_ZeroOpacity_SetsInvisible()
     {
         var vm = new OverlayViewModel();
-        vm.UpdateFrom(new OverlayState { MaskOpacity = 0, MessageText = "" });
+        vm.UpdateFrom(new OverlayState { MaskOpacity = 0 });
         Assert.False(vm.IsVisible);
     }
 
     [Fact]
-    public void UpdateFrom_HasMessage_SetsVisible()
+    public void UpdateFrom_NonZeroOpacity_SetsVisible()
     {
         var vm = new OverlayViewModel();
-        vm.UpdateFrom(new OverlayState { MaskOpacity = 0, MessageText = "请调整" });
+        vm.UpdateFrom(new OverlayState { MaskOpacity = 0.3 });
         Assert.True(vm.IsVisible);
     }
 
@@ -166,8 +160,6 @@ public class OverlayViewModel : INotifyPropertyChanged
     private double _maskOpacity;
     private string _maskColor = "#FFFFFF";
     private double _edgeOpacity;
-    private string _messageText = string.Empty;
-    private double _messageOpacity;
     private int _severityLevel;
     private bool _isVisible;
 
@@ -191,18 +183,6 @@ public class OverlayViewModel : INotifyPropertyChanged
         set => SetProperty(ref _edgeOpacity, value);
     }
 
-    public string MessageText
-    {
-        get => _messageText;
-        set => SetProperty(ref _messageText, value);
-    }
-
-    public double MessageOpacity
-    {
-        get => _messageOpacity;
-        set => SetProperty(ref _messageOpacity, value);
-    }
-
     public int SeverityLevel
     {
         get => _severityLevel;
@@ -220,10 +200,9 @@ public class OverlayViewModel : INotifyPropertyChanged
         MaskOpacity = state.MaskOpacity;
         MaskColor = state.MaskColor;
         EdgeOpacity = state.EdgeOpacity;
-        MessageText = state.MessageText;
-        MessageOpacity = state.MessageOpacity;
         SeverityLevel = state.SeverityLevel;
-        IsVisible = state.MaskOpacity > 0.01 || !string.IsNullOrEmpty(state.MessageText);
+        // 仅通过遮罩透明度判断可见性（第一版无文字提示）
+        IsVisible = state.MaskOpacity > 0.01;
     }
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -274,13 +253,15 @@ git commit -m "feat: 实现 OverlayViewModel (TDD)"
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
-        WindowState="Maximized"
-        WindowStartupLocation="CenterScreen">
+        WindowState="Normal"
+        WindowStartupLocation="Manual">
 
     <!--
         第8章 Overlay 设计：
         - 全屏、无边框、置顶、不出现在任务栏、背景透明
-        - 内部结构：Grid -> 主遮罩层 + 边缘雾层 + 提示文字 + 调试角标
+        - 内部结构：Grid -> 主遮罩层 + 边缘雾层
+        - 第一版无提示文字，视觉反馈仅通过遮罩/颜色/边缘渐变传达
+        - WindowState="Normal" + 手动定位，支持用户选择目标显示器
     -->
     <Grid x:Name="RootGrid">
         <!-- 主遮罩层 -->
@@ -297,26 +278,6 @@ git commit -m "feat: 实现 OverlayViewModel (TDD)"
                 </RadialGradientBrush>
             </Rectangle.Fill>
         </Rectangle>
-
-        <!-- 提示文字区域 -->
-        <TextBlock x:Name="MessageText"
-                   Text=""
-                   FontSize="48"
-                   FontWeight="Bold"
-                   Foreground="#333333"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Top"
-                   Margin="0,120,0,0"
-                   Opacity="0"
-                   TextWrapping="Wrap"
-                   TextAlignment="Center">
-            <TextBlock.Effect>
-                <DropShadowEffect Color="White"
-                                  ShadowDepth="0"
-                                  BlurRadius="20"
-                                  Opacity="0.9"/>
-            </TextBlock.Effect>
-        </TextBlock>
 
         <!-- 调试信息角标（默认隐藏） -->
         <Border x:Name="DebugBadge"
@@ -354,15 +315,33 @@ namespace SitRight;
 /// <summary>
 /// OverlayWindow：全屏遮罩窗口，对应第8章 Overlay 设计
 /// - 全屏、置顶、无边框、背景透明
-/// - 内部包含主遮罩层、边缘雾层、提示文字
+/// - 内部包含主遮罩层、边缘雾层
+/// - 第一版不包含提示文字，视觉反馈仅通过遮罩/颜色/边缘渐变传达
+/// - 支持用户选择目标显示器
 /// </summary>
 public partial class OverlayWindow : Window
 {
     public OverlayWindow()
     {
         InitializeComponent();
-        // 初始化为隐藏状态
-        Hide();
+        // 初始化为完全透明且手动定位（支持显示器选择）
+        SetTargetMonitor(0);
+    }
+
+    /// <summary>
+    /// 将 Overlay 定位到指定索引的显示器
+    /// </summary>
+    public void SetTargetMonitor(int monitorIndex)
+    {
+        var screens = System.Windows.Forms.Screen.AllScreens;
+        if (monitorIndex < 0 || monitorIndex >= screens.Length) monitorIndex = 0;
+
+        var bounds = screens[monitorIndex].Bounds;
+        WindowState = WindowState.Normal;
+        Left = bounds.Left;
+        Top = bounds.Top;
+        Width = bounds.Width;
+        Height = bounds.Height;
     }
 
     /// <summary>
@@ -396,35 +375,8 @@ public partial class OverlayWindow : Window
         // 应用边缘雾
         EdgeMask.Opacity = state.EdgeOpacity;
 
-        // 应用提示文字
-        MessageText.Text = state.MessageText;
-        MessageText.Opacity = state.MessageOpacity;
-
-        // 根据严重程度调整文字样式
-        if (state.SeverityLevel >= 3)
-        {
-            // 紧急状态：红色大字
-            MessageText.Foreground = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#B71C1C"));
-            MessageText.FontSize = 56;
-        }
-        else if (state.SeverityLevel >= 2)
-        {
-            // 警告状态：深灰
-            MessageText.Foreground = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#333333"));
-            MessageText.FontSize = 48;
-        }
-        else
-        {
-            // 提示状态：浅灰
-            MessageText.Foreground = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#555555"));
-            MessageText.FontSize = 40;
-        }
-
-        // 控制窗口可见性
-        if (state.MaskOpacity > 0.01 || !string.IsNullOrEmpty(state.MessageText))
+        // 控制窗口可见性（仅通过遮罩判断）
+        if (state.MaskOpacity > 0.01)
         {
             Show();
             Activate();
@@ -738,7 +690,6 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 _stateManager.ReceiveRawValue(value);
                 // 直接映射硬件端 blurLevel，平滑算法在硬件端完成
-                // 注意：ACK/ERR 校准回包解析尚未实现，需在后续校准 UI 任务中补充
                 RawValueText = value.ToString();
                 LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
 
@@ -747,6 +698,8 @@ public class MainViewModel : INotifyPropertyChanged
                 DisplayValueText = value.ToString("F1");
                 OnOverlayStateChanged?.Invoke(overlayState);
             }
+            // 注意：ACK/ERR 校准回包的解析将在 Task 12 中实现
+            // 当前 ACK/ERR 行会被 TryParse 返回 false 并忽略
         };
 
         // 设备状态变更处理
@@ -1117,4 +1070,8 @@ MCU(含平滑算法) → SerialService → DeviceProtocol → ValueMapper → Ov
                 MainViewModel ← DeviceStateManager
                        ↓
                 MainWindow (状态显示)
+
+校准通道（Task 12 补充）:
+MainWindow → SerialService.SendLine("CMD:SET_NORMAL") → MCU
+MCU → SerialService → DeviceProtocol.TryParseFull() → CalibrationData
 ```
