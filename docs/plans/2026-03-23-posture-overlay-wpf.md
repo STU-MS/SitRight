@@ -231,6 +231,8 @@ git add SitRight/Services/DeviceProtocol.cs SitRight.Tests/DeviceProtocolTests.c
 git commit -m "feat: 实现 DeviceProtocol 协议解析 (TDD)"
 ```
 
+**协议说明：** 串口协议为双通道设计。运行态输出纯数字（blurLevel），校准回包输出 `ACK:`/`ERR:` 开头的文本行。当前 DeviceProtocol 仅处理纯数字行，**ACK/ERR 解析尚未实现**，需在后续校准 UI 任务中补充。详见 `docs/plans/2026-04-01-serial-calibration-design.md`。
+
 ---
 
 ### Task 3: 实现 ValueMapper (TDD)

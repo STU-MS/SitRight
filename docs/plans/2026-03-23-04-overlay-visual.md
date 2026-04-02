@@ -738,6 +738,7 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 _stateManager.ReceiveRawValue(value);
                 // 直接映射硬件端 blurLevel，平滑算法在硬件端完成
+                // 注意：ACK/ERR 校准回包解析尚未实现，需在后续校准 UI 任务中补充
                 RawValueText = value.ToString();
                 LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
 

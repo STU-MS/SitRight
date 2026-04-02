@@ -453,6 +453,7 @@ git commit -m "feat: 实现 ConfigService 配置服务 (TDD)"
 - 移除 _displayTimer（不再需要定时器驱动平滑）
 - 数据流简化为：SerialService -> DeviceProtocol -> 直接 ValueMapper.Map(value) -> OverlayState
 - 每次收到硬件端数据时，立即映射并更新 OverlayState
+- 注意：串口协议为双通道，ACK/ERR 校准回包当前未实现解析，**需在后续校准 UI 任务中补充 DeviceProtocol 的 ACK/ERR 解析能力**
 
 **Step 1: 添加 ValueMapper 集成（GREEN）**
 

@@ -787,6 +787,18 @@ git commit -m "feat: 集成串口服务到 MainWindow"
 | `SitRight.Tests/DeviceStateManagerTests.cs` | 状态机测试 | - |
 | `SitRight/MainWindow.xaml.cs` | 主窗口最小接线（串口连接、状态显示、超时检查） | 第9章 |
 
+**串口双通道协议说明：**
+
+硬件端串口输出包含两种格式的行：
+
+| 格式 | 示例 | 软件端状态 |
+|------|------|-----------|
+| 运行态 blurLevel | `37` | 已实现（DeviceProtocol 解析为整数） |
+| 校准回包 ACK | `ACK:SET_NORMAL,ANGLE:12.34` | **未实现**，当前被 TryParse 视为非法行 |
+| 校准回包 ERR | `ERR:BUSY` | **未实现**，当前被 TryParse 视为非法行 |
+
+**待办：** 需扩展 DeviceProtocol 增加 ACK/ERR 解析能力，并在 DeviceStateManager 中新增校准状态管理，以支持校准 UI 功能。详见 `docs/plans/2026-04-01-serial-calibration-design.md`。
+
 **服务接口事件（供任务C/D订阅）:**
 ```csharp
 // SerialService 事件
