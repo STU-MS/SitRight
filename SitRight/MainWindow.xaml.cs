@@ -1,100 +1,95 @@
 using System;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
 using System.Windows.Threading;
 using SitRight.Models;
 using SitRight.Services;
+using SitRight.ViewModels;
 
 namespace SitRight;
 
 public partial class MainWindow : Window
 {
-    private bool _isSimulationMode;
+    private readonly MainViewModel _viewModel;
     private readonly OverlayWindow _overlay;
     private readonly DispatcherTimer _timeoutTimer;
-
-    public SerialService SerialService { get; } = new();
-    public DeviceProtocol Protocol { get; } = new();
-    public DeviceStateManager StateManager { get; } = new();
+    private readonly DeviceStateManager _stateManager;
 
     public MainWindow()
     {
         InitializeComponent();
 
+        var configService = new ConfigService();
+        var config = configService.Load();
+
+        var serialService = new SerialService();
+        var protocol = new DeviceProtocol();
+        _stateManager = new DeviceStateManager();
+        var valueMapper = new ValueMapper(config.HintStartLevel, config.UrgentLevel);
+
+        _viewModel = new MainViewModel(
+            serialService,
+            protocol,
+            _stateManager,
+            valueMapper,
+            configService);
+
         _overlay = new OverlayWindow();
         _overlay.Show();
 
-        BindEvents();
-        RefreshPorts();
-        UpdateStatus(StateManager.State);
+        _viewModel.OnOverlayStateChanged += state => Dispatcher.Invoke(() => _overlay.ApplyState(state));
+
+        _stateManager.OnStateChanged += state => Dispatcher.Invoke(() => UpdateStatus(state));
 
         _timeoutTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
         };
-        _timeoutTimer.Tick += (_, _) => StateManager.CheckTimeout();
+        _timeoutTimer.Tick += (_, _) => _stateManager.CheckTimeout();
         _timeoutTimer.Start();
+
+        BindUIEvents();
+        RefreshPorts();
+        UpdateStatus(_stateManager.State);
 
         Log("应用程序已启动");
     }
 
-    private void BindEvents()
+    private void BindUIEvents()
     {
         RefreshButton.Click += (_, _) => RefreshPorts();
         ConnectButton.Click += ConnectButtonClicked;
 
-        SerialService.OnConnected += () =>
+        SimulationModeCheckBox.Checked += (_, _) =>
         {
-            StateManager.OnConnected();
-            Dispatcher.Invoke(() =>
-            {
-                ConnectButton.Content = "断开";
-                Log($"串口已连接: {SerialService.CurrentPort}");
-            });
+            _viewModel.IsSimulationMode = true;
+            SimulatedValueSlider.IsEnabled = true;
         };
 
-        SerialService.OnDisconnected += () =>
+        SimulationModeCheckBox.Unchecked += (_, _) =>
         {
-            StateManager.OnDisconnected();
-            Dispatcher.Invoke(() =>
-            {
-                ConnectButton.Content = "连接";
-                Log("串口已断开");
-            });
+            _viewModel.IsSimulationMode = false;
+            SimulatedValueSlider.IsEnabled = false;
+            _overlay.ApplyState(new OverlayState());
         };
 
-        SerialService.OnError += ex =>
+        SimulatedValueSlider.ValueChanged += (_, e) =>
         {
-            StateManager.OnFault(ex.Message);
-            Dispatcher.Invoke(() => Log($"串口错误: {ex.Message}"));
+            var value = (int)e.NewValue;
+            SimulatedValueText.Text = value.ToString();
+            _viewModel.SimulateValue(value);
         };
 
-        SerialService.OnLineReceived += line =>
+        _viewModel.OnConnectionStateChanged += _ => Dispatcher.Invoke(() =>
         {
-            if (!Protocol.TryParse(line, out var value))
-            {
-                Dispatcher.Invoke(() => Log($"收到非法串口数据: {line}"));
-                return;
-            }
-
-            StateManager.ReceiveRawValue(value);
-            Dispatcher.Invoke(() =>
-            {
-                RawValueText.Text = value.ToString();
-                DisplayValueText.Text = value.ToString();
-                LastReceiveTimeText.Text = DateTime.Now.ToString("HH:mm:ss");
-            });
-        };
-
-        StateManager.OnStateChanged += state => Dispatcher.Invoke(() => UpdateStatus(state));
+            ConnectButton.Content = _viewModel.IsConnected ? "断开" : "连接";
+        });
     }
 
     private void ConnectButtonClicked(object? sender, RoutedEventArgs e)
     {
-        if (SerialService.IsConnected)
+        if (_viewModel.IsConnected)
         {
-            SerialService.Disconnect();
+            _viewModel.Disconnect();
             return;
         }
 
@@ -105,22 +100,20 @@ public partial class MainWindow : Window
             return;
         }
 
-        StateManager.OnConnecting();
-
         try
         {
-            SerialService.Connect(portName, GetSelectedBaudRate());
+            var baudRate = GetSelectedBaudRate();
+            _viewModel.Connect(portName, baudRate);
         }
         catch (Exception ex)
         {
-            StateManager.OnFault(ex.Message);
             Log($"连接失败: {ex.Message}");
         }
     }
 
     private int GetSelectedBaudRate()
     {
-        if (BaudRateComboBox.SelectedItem is ComboBoxItem comboBoxItem)
+        if (BaudRateComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem comboBoxItem)
         {
             var contentText = comboBoxItem.Content?.ToString();
             if (int.TryParse(contentText, out var comboValue))
@@ -135,7 +128,7 @@ public partial class MainWindow : Window
 
     private void RefreshPorts()
     {
-        var ports = SerialService.GetAvailablePorts();
+        var ports = _viewModel.AvailablePorts;
         ComPortComboBox.ItemsSource = ports;
 
         if (ports.Length > 0 && ComPortComboBox.SelectedItem is null)
@@ -144,35 +137,24 @@ public partial class MainWindow : Window
         Log($"已刷新串口列表: {ports.Length} 个端口");
     }
 
-    private void SimulationModeChanged(object sender, RoutedEventArgs e)
+    private void UpdateStatus(DeviceState state)
     {
-        _isSimulationMode = SimulationModeCheckBox.IsChecked == true;
-        SimulatedValueSlider.IsEnabled = _isSimulationMode;
-
-        if (_isSimulationMode)
+        StatusText.Text = state.ConnectionState.ToString();
+        StatusText.Foreground = state.ConnectionState switch
         {
-            var level = SimulatedValueSlider.Value;
-            _overlay.ApplyState(OverlayState.FromDisplayLevel(level));
-            return;
+            DeviceConnectionState.Receiving or DeviceConnectionState.ConnectedIdle => System.Windows.Media.Brushes.Green,
+            DeviceConnectionState.Connecting => System.Windows.Media.Brushes.DodgerBlue,
+            DeviceConnectionState.Timeout => System.Windows.Media.Brushes.Orange,
+            DeviceConnectionState.Fault => System.Windows.Media.Brushes.Red,
+            _ => System.Windows.Media.Brushes.Gray
+        };
+
+        if (!state.LastReceiveTime.HasValue && state.ConnectionState == DeviceConnectionState.Disconnected)
+        {
+            RawValueText.Text = "--";
+            DisplayValueText.Text = "--";
+            LastReceiveTimeText.Text = "--";
         }
-
-        _overlay.ApplyState(new OverlayState
-        {
-            MaskOpacity = 0,
-            EdgeOpacity = 0,
-            MessageOpacity = 0,
-            MessageText = string.Empty,
-            BlockInput = false
-        });
-    }
-
-    private void SimulatedValueSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        var level = e.NewValue;
-        SimulatedValueText.Text = ((int)level).ToString();
-
-        if (_isSimulationMode)
-            _overlay.ApplyState(OverlayState.FromDisplayLevel(level));
     }
 
     protected void Log(string message)
@@ -185,30 +167,9 @@ public partial class MainWindow : Window
         });
     }
 
-    private void UpdateStatus(DeviceState state)
-    {
-        StatusText.Text = state.ConnectionState.ToString();
-        StatusText.Foreground = state.ConnectionState switch
-        {
-            DeviceConnectionState.Receiving or DeviceConnectionState.ConnectedIdle => Brushes.Green,
-            DeviceConnectionState.Connecting => Brushes.DodgerBlue,
-            DeviceConnectionState.Timeout => Brushes.Orange,
-            DeviceConnectionState.Fault => Brushes.Red,
-            _ => Brushes.Gray
-        };
-
-        if (!state.LastReceiveTime.HasValue && state.ConnectionState == DeviceConnectionState.Disconnected)
-        {
-            RawValueText.Text = "--";
-            DisplayValueText.Text = "--";
-            LastReceiveTimeText.Text = "--";
-        }
-    }
-
     protected override void OnClosed(EventArgs e)
     {
         _timeoutTimer.Stop();
-        SerialService.Dispose();
         _overlay.Close();
         base.OnClosed(e);
     }

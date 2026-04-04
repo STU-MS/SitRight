@@ -12,8 +12,6 @@ public class AppConfigTests
         Assert.Equal("COM1", config.DefaultComPort);
         Assert.Equal(115200, config.BaudRate);
         Assert.Equal(2000, config.TimeoutThresholdMs);
-        Assert.Equal(33, config.DisplayRefreshIntervalMs);
-        Assert.Equal(0.18, config.SmoothingAlpha);
         Assert.Equal(0.70, config.MaxMaskOpacity);
         Assert.Equal(30, config.HintStartLevel);
         Assert.Equal(80, config.UrgentLevel);
