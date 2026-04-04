@@ -31,8 +31,8 @@ public class ValueMapperTests
     public void Map_Level50_ReturnsModerateMask()
     {
         var state = _mapper.Map(50);
-        Assert.True(state.MaskOpacity > 0.2);
-        Assert.True(state.MaskOpacity < 0.5);
+        Assert.True(state.MaskOpacity > 0.1);
+        Assert.True(state.MaskOpacity < 0.3);
     }
 
     [Fact]
@@ -43,10 +43,10 @@ public class ValueMapperTests
     }
 
     [Fact]
-    public void Map_LevelAboveUrgent_BlocksInput()
+    public void Map_LevelAboveUrgent_NeverBlocksInput()
     {
         var state = _mapper.Map(90);
-        Assert.True(state.BlockInput);
+        Assert.False(state.BlockInput);
         Assert.Equal(3, state.SeverityLevel);
     }
 
