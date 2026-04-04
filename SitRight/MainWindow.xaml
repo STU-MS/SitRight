@@ -24,7 +24,9 @@
                     <ComboBoxItem Content="115200" IsSelected="True"/>
                 </ComboBox>
                 <Button x:Name="RefreshButton" Content="刷新" Width="60" Margin="0,0,8,0"/>
-                <Button x:Name="ConnectButton" Content="连接" Width="80"/>
+                <Button x:Name="ConnectButton" Content="连接" Width="80" Margin="0,0,16,0"/>
+                <TextBlock Text="显示器:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox x:Name="MonitorComboBox" Width="150"/>
             </StackPanel>
         </GroupBox>
 

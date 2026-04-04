@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Threading;
 using SitRight.Models;
@@ -13,6 +14,7 @@ public partial class MainWindow : Window
     private readonly OverlayWindow _overlay;
     private readonly DispatcherTimer _timeoutTimer;
     private readonly DeviceStateManager _stateManager;
+    private readonly ConfigService _configService;
 
     public MainWindow()
     {
@@ -20,6 +22,7 @@ public partial class MainWindow : Window
 
         var configService = new ConfigService();
         var config = configService.Load();
+        _configService = configService;
 
         var serialService = new SerialService();
         var protocol = new DeviceProtocol();
@@ -35,6 +38,8 @@ public partial class MainWindow : Window
 
         _overlay = new OverlayWindow();
         _overlay.Show();
+
+        RefreshMonitors(config.TargetMonitorIndex);
 
         _viewModel.OnOverlayStateChanged += state => Dispatcher.Invoke(() => _overlay.ApplyState(state));
 
@@ -58,6 +63,17 @@ public partial class MainWindow : Window
     {
         RefreshButton.Click += (_, _) => RefreshPorts();
         ConnectButton.Click += ConnectButtonClicked;
+
+        MonitorComboBox.SelectionChanged += (_, _) =>
+        {
+            var index = MonitorComboBox.SelectedIndex;
+            if (index >= 0)
+            {
+                _overlay.MoveToMonitor(index);
+                _configService.Update(c => c.TargetMonitorIndex = index);
+                Log($"Overlay 已切换到显示器 {index + 1}");
+            }
+        };
 
         CalibrateNormalButton.Click += (_, _) =>
         {
@@ -170,6 +186,19 @@ public partial class MainWindow : Window
             ComPortComboBox.SelectedIndex = 0;
 
         Log($"已刷新串口列表: {ports.Length} 个端口");
+    }
+
+    private void RefreshMonitors(int savedIndex = 0)
+    {
+        var screens = System.Windows.Forms.Screen.AllScreens;
+        var items = screens.Select((s, i) =>
+        {
+            var label = s.Primary ? "主显示器" : $"显示器 {i + 1}";
+            return $"{label} ({s.Bounds.Width}x{s.Bounds.Height})";
+        }).ToArray();
+
+        MonitorComboBox.ItemsSource = items;
+        MonitorComboBox.SelectedIndex = savedIndex < items.Length ? savedIndex : 0;
     }
 
     private void UpdateStatus(DeviceState state)

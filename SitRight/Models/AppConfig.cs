@@ -8,4 +8,5 @@ public class AppConfig
     public double MaxMaskOpacity { get; set; } = 0.70;
     public int HintStartLevel { get; set; } = 30;
     public int UrgentLevel { get; set; } = 80;
+    public int TargetMonitorIndex { get; set; } = 0;
 }

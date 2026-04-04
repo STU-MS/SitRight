@@ -5,12 +5,8 @@ using SitRight.Models;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 
-
-
 namespace SitRight
 {
-    
-    
     public partial class OverlayWindow : Window
     {
         [DllImport("user32.dll")]
@@ -21,8 +17,7 @@ namespace SitRight
 
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x20;
-        
-        
+
         private void SetClickThrough(bool enable)
         {
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -37,16 +32,33 @@ namespace SitRight
                 SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle & ~WS_EX_TRANSPARENT);
             }
         }
-        
+
         public OverlayWindow()
         {
             InitializeComponent();
 
-            //启动时强制完全透明
             MaskRect.Opacity = 0;
             EdgeRect.Opacity = 0;
-
             RootGrid.IsHitTestVisible = false;
+
+            MoveToMonitor(0);
+        }
+
+        public void MoveToMonitor(int index)
+        {
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            var target = index >= 0 && index < screens.Length
+                ? screens[index]
+                : System.Windows.Forms.Screen.PrimaryScreen ?? screens[0];
+
+            var bounds = target.Bounds;
+
+            WindowStyle = WindowStyle.None;
+            WindowState = WindowState.Normal;
+            Left = bounds.Left;
+            Top = bounds.Top;
+            Width = bounds.Width;
+            Height = bounds.Height;
         }
 
         public void ApplyState(OverlayState state)
@@ -57,8 +69,6 @@ namespace SitRight
 
             EdgeRect.Opacity = state.EdgeOpacity;
 
-
-            // 🔥 核心：控制是否穿透（真正生效的地方）
             SetClickThrough(!state.BlockInput);
         }
     }

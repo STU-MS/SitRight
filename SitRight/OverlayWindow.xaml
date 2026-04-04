@@ -6,7 +6,7 @@
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
-        WindowState="Maximized">
+        WindowState="Normal">
 
     <Grid x:Name="RootGrid" IsHitTestVisible="False">
         <!-- 主遮罩 -->
