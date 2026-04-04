@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="SitRight - 坐姿矫正仪"
-        Width="480" Height="400"
+        Width="480" Height="480"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -61,8 +62,32 @@
             </StackPanel>
         </GroupBox>
 
+        <!-- 校准控制区 -->
+        <GroupBox Grid.Row="3" Header="校准控制" Margin="0,0,0,12">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Button Grid.Row="0" Grid.Column="0" x:Name="CalibrateNormalButton" Content="校准坐正" Width="80" Margin="0,0,12,4"/>
+                <Button Grid.Row="0" Grid.Column="1" x:Name="CalibrateSlouchButton" Content="校准驼背" Width="80" Margin="0,0,12,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="状态:" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="3" x:Name="CalibrationStatusText" Text="未校准" VerticalAlignment="Center" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="坐正角度:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="NormalAngleText" Text="--" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="驼背角度:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="3" x:Name="SlouchAngleText" Text="--" VerticalAlignment="Center"/>
+            </Grid>
+        </GroupBox>
+
         <!-- 日志区域 -->
-        <GroupBox Grid.Row="3" Header="日志">
+        <GroupBox Grid.Row="4" Header="日志">
             <ScrollViewer>
                 <TextBox x:Name="LogTextBox" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="11"/>

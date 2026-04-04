@@ -14,5 +14,6 @@ public interface ISerialService : IDisposable
 
     void Connect(string portName, int baudRate);
     void Disconnect();
+    void SendLine(string line);
     string[] GetAvailablePorts();
 }

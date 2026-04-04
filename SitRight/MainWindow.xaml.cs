@@ -59,6 +59,28 @@ public partial class MainWindow : Window
         RefreshButton.Click += (_, _) => RefreshPorts();
         ConnectButton.Click += ConnectButtonClicked;
 
+        CalibrateNormalButton.Click += (_, _) =>
+        {
+            if (!_viewModel.IsConnected)
+            {
+                Log("请先连接设备");
+                return;
+            }
+            _viewModel.SendCalibrationCommand("SET_NORMAL");
+            Log("已发送校准坐正命令...");
+        };
+
+        CalibrateSlouchButton.Click += (_, _) =>
+        {
+            if (!_viewModel.IsConnected)
+            {
+                Log("请先连接设备");
+                return;
+            }
+            _viewModel.SendCalibrationCommand("SET_SLOUCH");
+            Log("已发送校准驼背命令...");
+        };
+
         SimulationModeCheckBox.Checked += (_, _) =>
         {
             _viewModel.IsSimulationMode = true;
@@ -82,6 +104,19 @@ public partial class MainWindow : Window
         _viewModel.OnConnectionStateChanged += _ => Dispatcher.Invoke(() =>
         {
             ConnectButton.Content = _viewModel.IsConnected ? "断开" : "连接";
+        });
+
+        _viewModel.OnCalibrationChanged += _ => Dispatcher.Invoke(() =>
+        {
+            CalibrationStatusText.Text = _viewModel.CalibrationStatusText;
+            NormalAngleText.Text = _viewModel.NormalAngleText;
+            SlouchAngleText.Text = _viewModel.SlouchAngleText;
+
+            var data = _viewModel.CalibrationData;
+            if (data.State == CalibrationState.Error)
+                Log($"校准错误: {data.LastError}");
+            else if (data.LastCalibrated.HasValue)
+                Log($"校准状态: {_viewModel.CalibrationStatusText}");
         });
     }
 

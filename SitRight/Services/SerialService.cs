@@ -66,6 +66,12 @@ public class SerialService : ISerialService
         }
     }
 
+    public void SendLine(string line)
+    {
+        if (_serialPort?.IsOpen == true)
+            _serialPort.WriteLine(line);
+    }
+
     public void Dispose()
     {
         if (_disposed)

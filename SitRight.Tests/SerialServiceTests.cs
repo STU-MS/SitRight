@@ -40,4 +40,14 @@ public class SerialServiceTests
 
         Assert.Null(exception);
     }
+
+    [Fact]
+    public void SendLine_WhenNotConnected_DoesNotThrow()
+    {
+        using var service = new SerialService();
+
+        var exception = Record.Exception(() => service.SendLine("CMD:SET_NORMAL"));
+
+        Assert.Null(exception);
+    }
 }

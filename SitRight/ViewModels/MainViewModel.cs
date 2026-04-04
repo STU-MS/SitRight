@@ -20,11 +20,17 @@ public class MainViewModel : INotifyPropertyChanged
     private string _lastReceiveTimeText = "--";
     private bool _isConnected;
     private bool _isSimulationMode;
+    private string _calibrationStatusText = "未校准";
+    private string _normalAngleText = "--";
+    private string _slouchAngleText = "--";
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action<DeviceConnectionState>? OnConnectionStateChanged;
     public event Action<OverlayState>? OnOverlayStateChanged;
     public event Action<bool>? OnSimulationModeChanged;
+    public event Action<CalibrationData>? OnCalibrationChanged;
+
+    public CalibrationData CalibrationData { get; } = new();
 
     public string StatusText
     {
@@ -68,6 +74,24 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public string CalibrationStatusText
+    {
+        get => _calibrationStatusText;
+        private set => SetProperty(ref _calibrationStatusText, value);
+    }
+
+    public string NormalAngleText
+    {
+        get => _normalAngleText;
+        private set => SetProperty(ref _normalAngleText, value);
+    }
+
+    public string SlouchAngleText
+    {
+        get => _slouchAngleText;
+        private set => SetProperty(ref _slouchAngleText, value);
+    }
+
     public string[] AvailablePorts => _serialService.GetAvailablePorts();
 
     public MainViewModel(
@@ -89,15 +113,32 @@ public class MainViewModel : INotifyPropertyChanged
     {
         _serialService.OnLineReceived += line =>
         {
-            if (_protocol.TryParse(line, out var value))
+            if (_protocol.TryParseFull(line, out var type, out var value, out var ack, out var err))
             {
-                _stateManager.ReceiveRawValue(value);
-                RawValueText = value.ToString();
-                LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
+                switch (type)
+                {
+                    case ProtocolLineType.RuntimeData:
+                        _stateManager.ReceiveRawValue(value);
+                        RawValueText = value.ToString();
+                        LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
 
-                var overlayState = _valueMapper.Map(value);
-                DisplayValueText = value.ToString();
-                OnOverlayStateChanged?.Invoke(overlayState);
+                        var overlayState = _valueMapper.Map(value);
+                        DisplayValueText = value.ToString();
+                        OnOverlayStateChanged?.Invoke(overlayState);
+                        break;
+
+                    case ProtocolLineType.CalibrationAck:
+                        CalibrationData.ApplyAck(ack!);
+                        UpdateCalibrationUI();
+                        OnCalibrationChanged?.Invoke(CalibrationData);
+                        break;
+
+                    case ProtocolLineType.CalibrationErr:
+                        CalibrationData.ApplyError(err!);
+                        UpdateCalibrationUI();
+                        OnCalibrationChanged?.Invoke(CalibrationData);
+                        break;
+                }
             }
         };
 
@@ -125,6 +166,26 @@ public class MainViewModel : INotifyPropertyChanged
         };
     }
 
+    private void UpdateCalibrationUI()
+    {
+        CalibrationStatusText = CalibrationData.State switch
+        {
+            CalibrationState.NotCalibrated => "未校准",
+            CalibrationState.NormalSet => "已校准坐正",
+            CalibrationState.FullyCalibrated => "完全校准",
+            CalibrationState.Error => $"错误: {CalibrationData.LastError}",
+            _ => "--"
+        };
+
+        NormalAngleText = CalibrationData.NormalAngle.HasValue
+            ? $"{CalibrationData.NormalAngle.Value:F2}°"
+            : "--";
+
+        SlouchAngleText = CalibrationData.SlouchAngle.HasValue
+            ? $"{CalibrationData.SlouchAngle.Value:F2}°"
+            : "--";
+    }
+
     public void Connect(string portName, int baudRate)
     {
         _stateManager.OnConnecting();
@@ -149,6 +210,12 @@ public class MainViewModel : INotifyPropertyChanged
             DisplayValueText = value.ToString();
             OnOverlayStateChanged?.Invoke(overlayState);
         }
+    }
+
+    public void SendCalibrationCommand(string command)
+    {
+        if (_isConnected)
+            _serialService.SendLine($"CMD:{command}");
     }
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
