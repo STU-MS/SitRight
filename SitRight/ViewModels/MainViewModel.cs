@@ -130,13 +130,23 @@ public class MainViewModel : INotifyPropertyChanged
                         RawValueText = value.ToString();
                         LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
 
-                        var overlayState = _valueMapper.Map(value);
-                        DisplayValueText = value.ToString();
-                        // [诊断3] Overlay 状态计算结果
-                        OnLog?.Invoke($"[DIAG-3] Overlay: opacity={overlayState.MaskOpacity:F3}, color={overlayState.MaskColor}, edge={overlayState.EdgeOpacity:F3}");
-                        // [诊断4] 即将触发 OnOverlayStateChanged
-                        OnLog?.Invoke($"[DIAG-4] OnOverlayStateChanged 订阅者数: {OnOverlayStateChanged?.GetInvocationList()?.Length ?? 0}");
-                        OnOverlayStateChanged?.Invoke(overlayState);
+                        // 只有在完全校准后才触发遮罩渲染
+                        if (CalibrationData.State == CalibrationState.FullyCalibrated)
+                        {
+                            var overlayState = _valueMapper.Map(value);
+                            DisplayValueText = value.ToString();
+                            // [诊断3] Overlay 状态计算结果
+                            OnLog?.Invoke($"[DIAG-3] Overlay: opacity={overlayState.MaskOpacity:F3}, color={overlayState.MaskColor}, edge={overlayState.EdgeOpacity:F3}");
+                            // [诊断4] 即将触发 OnOverlayStateChanged
+                            OnLog?.Invoke($"[DIAG-4] OnOverlayStateChanged 订阅者数: {OnOverlayStateChanged?.GetInvocationList()?.Length ?? 0}");
+                            OnOverlayStateChanged?.Invoke(overlayState);
+                        }
+                        else
+                        {
+                            DisplayValueText = value.ToString();
+                            // 校准期间不触发遮罩渲染，确保屏幕不会变灰
+                            OnLog?.Invoke($"[DIAG-3] 校准未完成，跳过遮罩渲染");
+                        }
                         break;
 
                     case ProtocolLineType.CalibrationAck:
@@ -223,9 +233,19 @@ public class MainViewModel : INotifyPropertyChanged
             RawValueText = value.ToString();
             LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
 
-            var overlayState = _valueMapper.Map(value);
-            DisplayValueText = value.ToString();
-            OnOverlayStateChanged?.Invoke(overlayState);
+            // 只有在完全校准后才触发遮罩渲染
+            if (CalibrationData.State == CalibrationState.FullyCalibrated)
+            {
+                var overlayState = _valueMapper.Map(value);
+                DisplayValueText = value.ToString();
+                OnOverlayStateChanged?.Invoke(overlayState);
+            }
+            else
+            {
+                DisplayValueText = value.ToString();
+                // 校准期间不触发遮罩渲染，确保屏幕不会变灰
+                OnLog?.Invoke($"[DIAG-3] 校准未完成，跳过遮罩渲染");
+            }
         }
     }
 

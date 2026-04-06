@@ -109,6 +109,9 @@ public class MainViewModelTests
         OverlayState? receivedState = null;
         _viewModel.OnOverlayStateChanged += state => receivedState = state;
 
+        // 设置为完全校准状态，以便触发遮罩渲染
+        _viewModel.CalibrationData.ApplyAck(new CalibrationAckData("SET_SLOUCH", new Dictionary<string, string> { { "ANGLE", "10.0" } }));
+
         _viewModel.IsSimulationMode = true;
         _viewModel.SimulateValue(50);
 
