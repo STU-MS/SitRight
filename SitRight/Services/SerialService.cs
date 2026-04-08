@@ -1,6 +1,7 @@
 using System;
 using System.IO.Ports;
 using System.Text;
+using System.Threading;
 
 namespace SitRight.Services;
 
@@ -9,6 +10,8 @@ public class SerialService : ISerialService
     private SerialPort? _serialPort;
     private readonly StringBuilder _buffer = new();
     private bool _disposed;
+    private readonly object _bufferLock = new();
+    private readonly SynchronizationContext _uiContext = SynchronizationContext.Current ?? new();
 
     public event Action<string>? OnLineReceived;
     public event Action<Exception>? OnError;
@@ -29,7 +32,11 @@ public class SerialService : ISerialService
 
         Disconnect();
 
-        _buffer.Clear();
+        lock (_bufferLock)
+        {
+            _buffer.Clear();
+        }
+
         _serialPort = new SerialPort(portName, baudRate)
         {
             NewLine = "\n",
@@ -39,9 +46,17 @@ public class SerialService : ISerialService
 
         _serialPort.DataReceived += HandleDataReceived;
         _serialPort.ErrorReceived += HandleErrorReceived;
-        _serialPort.Open();
 
-        OnConnected?.Invoke();
+        try
+        {
+            _serialPort.Open();
+            _uiContext.Post(_ => OnConnected?.Invoke(), null);
+        }
+        catch (Exception ex)
+        {
+            _uiContext.Post(_ => OnError?.Invoke(ex), null);
+            Disconnect();
+        }
     }
 
     public void Disconnect()
@@ -57,19 +72,33 @@ public class SerialService : ISerialService
             if (_serialPort.IsOpen)
                 _serialPort.Close();
         }
+        catch (Exception ex)
+        {
+            _uiContext.Post(_ => OnError?.Invoke(ex), null);
+        }
         finally
         {
             _serialPort.Dispose();
             _serialPort = null;
-            _buffer.Clear();
-            OnDisconnected?.Invoke();
+            lock (_bufferLock)
+            {
+                _buffer.Clear();
+            }
+            _uiContext.Post(_ => OnDisconnected?.Invoke(), null);
         }
     }
 
     public void SendLine(string line)
     {
-        if (_serialPort?.IsOpen == true)
-            _serialPort.WriteLine(line);
+        try
+        {
+            if (_serialPort?.IsOpen == true && !string.IsNullOrEmpty(line))
+                _serialPort.WriteLine(line);
+        }
+        catch (Exception ex)
+        {
+            _uiContext.Post(_ => OnError?.Invoke(ex), null);
+        }
     }
 
     public void Dispose()
@@ -85,33 +114,43 @@ public class SerialService : ISerialService
     {
         try
         {
-            if (sender is not SerialPort port)
+            if (sender is not SerialPort port || !port.IsOpen)
                 return;
 
-            _buffer.Append(port.ReadExisting());
+            string data = port.ReadExisting();
+            if (string.IsNullOrEmpty(data))
+                return;
 
-            while (true)
+            //加锁操作StringBuilder，保证线程安全
+            lock (_bufferLock)
             {
-                var current = _buffer.ToString();
-                var newLineIndex = current.IndexOf('\n');
-                if (newLineIndex < 0)
-                    break;
+                _buffer.Append(data);
 
-                var line = current[..newLineIndex].TrimEnd('\r');
-                _buffer.Remove(0, newLineIndex + 1);
+                while (true)
+                {
+                    var current = _buffer.ToString();
+                    var newLineIndex = current.IndexOf('\n');
+                    if (newLineIndex < 0)
+                        break;
 
-                if (!string.IsNullOrEmpty(line))
-                    OnLineReceived?.Invoke(line);
+                    var line = current[..newLineIndex].TrimEnd('\r');
+                    _buffer.Remove(0, newLineIndex + 1);
+
+                    if (!string.IsNullOrEmpty(line))
+                    {
+                        _uiContext.Post(_ => OnLineReceived?.Invoke(line), null);
+                    }
+                }
             }
         }
         catch (Exception ex)
         {
-            OnError?.Invoke(ex);
+            _uiContext.Post(_ => OnError?.Invoke(ex), null);
         }
     }
 
     private void HandleErrorReceived(object sender, SerialErrorReceivedEventArgs e)
     {
-        OnError?.Invoke(new InvalidOperationException($"Serial error: {e.EventType}"));
+        _uiContext.Post(_ => OnError?.Invoke(new InvalidOperationException($"Serial error: {e.EventType}")), null);
     }
 }
