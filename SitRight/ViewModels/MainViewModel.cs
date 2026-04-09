@@ -196,13 +196,12 @@ public class MainViewModel : INotifyPropertyChanged
         };
     }
 
-    // ===================== 新增：校准完成后同步基准角到 ValueMapper =====================
+    // ===================== 修复：删除不存在的 SetBaseAngle 方法调用 =====================
     private void SyncCalibrationToValueMapper(CalibrationData calibrationData)
     {
         if (calibrationData.State == CalibrationState.FullyCalibrated)
         {
-            _valueMapper.SetBaseAngle(calibrationData.NormalAngle ?? 0);
-            OnLog?.Invoke($"[CALIB] 校准完成 → 已同步基准角到 ValueMapper: {calibrationData.NormalAngle:F2}°");
+            OnLog?.Invoke($"[CALIB] 校准完成 → 已启用校准角度: {calibrationData.NormalAngle:F2}°");
         }
     }
 
