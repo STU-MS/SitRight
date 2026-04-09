@@ -107,6 +107,9 @@ public class MainViewModel : INotifyPropertyChanged
         _valueMapper = valueMapper;
 
         BindEvents();
+
+        // ===================== 新增：绑定校准变化事件 =====================
+        SubscribeCalibrationChanges();
     }
 
     public event Action<string>? OnLog;
@@ -182,6 +185,7 @@ public class MainViewModel : INotifyPropertyChanged
         _serialService.OnDisconnected += () =>
         {
             _stateManager.OnDisconnected();
+            _stateManager.Disconnect();
             IsConnected = false;
         };
 
@@ -190,6 +194,22 @@ public class MainViewModel : INotifyPropertyChanged
             StatusText = state.ConnectionState.ToString();
             OnConnectionStateChanged?.Invoke(state.ConnectionState);
         };
+    }
+
+    // ===================== 新增：校准完成后同步基准角到 ValueMapper =====================
+    private void SyncCalibrationToValueMapper(CalibrationData calibrationData)
+    {
+        if (calibrationData.State == CalibrationState.FullyCalibrated)
+        {
+            _valueMapper.SetBaseAngle(calibrationData.NormalAngle ?? 0);
+            OnLog?.Invoke($"[CALIB] 校准完成 → 已同步基准角到 ValueMapper: {calibrationData.NormalAngle:F2}°");
+        }
+    }
+
+    // ===================== 新增：订阅校准变化事件 =====================
+    private void SubscribeCalibrationChanges()
+    {
+        OnCalibrationChanged += SyncCalibrationToValueMapper;
     }
 
     private void UpdateCalibrationUI()
