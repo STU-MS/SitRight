@@ -10,56 +10,27 @@ public class OverlayState
     public string MessageText { get; set; } = string.Empty;
     public double MessageOpacity { get; set; }
     public int SeverityLevel { get; set; }
-
     public bool BlockInput { get; set; }
 
     public static OverlayState FromDisplayLevel(double level, int hintStart = 30, int urgentLevel = 80)
     {
+        level = Math.Clamp(level, 0, 100);
         var normalized = level / 100.0;
-        
-        //var blockInput = level >= 80;
-
-        // Opacity mapping: low level = subtle, high level = aggressive
-        /*var maskOpacity = 0.05 + Math.Pow(normalized, 1.4) * 0.65;*/
-        var maskOpacity = 0.02 + Math.Pow(normalized, 2.8) * 0.98;
-        
-        if (level > 95)
-        {
-            maskOpacity = 1.0;
-        }
-
-        // Color: white (cold) -> light gray -> darker gray
-        string color;
-        if (level < 30)
-            color = "#FFFFFF";
-        else if (level < 60)
-            color = "#E0E0E0";
-        else if (level < 80)
-            color = "#BDBDBD";
-        else
-            color = "#9E9E9E";
-
-        // Edge opacity for fog effect
+        var maskOpacity = level > 95 ? 1.0 : 0.02 + Math.Pow(normalized, 2.8) * 0.98;
         var edgeOpacity = Math.Pow(normalized, 1.8) * 0.25;
-
-       
-
-        // Severity level
-        var severity = level switch
-        {
-            <= 20 => 0,
-            <= 50 => 1,
-            <= 79 => 2,
-            _ => 3
-        };
+        var message = level < hintStart ? string.Empty : level < urgentLevel ? "请调整坐姿" : "请立即调整坐姿！";
+        var messageOpacity = level <= hintStart ? 0 : Math.Min(1.0, (level - hintStart) / 40.0);
+        var severity = level switch { <= 20 => 0, <= 50 => 1, <= 79 => 2, _ => 3 };
 
         return new OverlayState
         {
-            MaskOpacity = maskOpacity,
-            MaskColor = color,
-            EdgeOpacity = edgeOpacity,
+            MaskOpacity = Math.Clamp(maskOpacity, 0, 1),
+            MaskColor = level < 30 ? "#FFFFFF" : level < 60 ? "#E0E0E0" : level < 80 ? "#BDBDBD" : "#9E9E9E",
+            EdgeOpacity = Math.Clamp(edgeOpacity, 0, 1),
+            MessageText = message,
+            MessageOpacity = Math.Clamp(messageOpacity, 0, 1),
             SeverityLevel = severity,
-            //BlockInput = blockInput //决定能不能交互
+            BlockInput = false
         };
     }
 }

@@ -1,4 +1,3 @@
-using Xunit;
 using SitRight.Models;
 
 namespace SitRight.Models;
@@ -18,20 +17,31 @@ public class OverlayStateTests
     }
 
     [Fact]
-    public void FromDisplayLevel_LevelZero_ReturnsMinimalMask()
+    public void FromDisplayLevel_LevelZero_ReturnsNoMessage()
     {
         var state = OverlayState.FromDisplayLevel(0);
-        Assert.True(state.MaskOpacity < 0.1);
+
         Assert.Equal(string.Empty, state.MessageText);
+        Assert.Equal(0, state.MessageOpacity);
         Assert.Equal(0, state.SeverityLevel);
     }
 
     [Fact]
-    public void FromDisplayLevel_Level100_ReturnsMaxMask()
+    public void FromDisplayLevel_HintThreshold_ShowsReminder()
     {
-        var state = OverlayState.FromDisplayLevel(100);
-        Assert.True(state.MaskOpacity > 0.6);
-        Assert.NotEmpty(state.MessageText);
+        var state = OverlayState.FromDisplayLevel(35, hintStart: 30, urgentLevel: 80);
+
+        Assert.Equal("请调整坐姿", state.MessageText);
+        Assert.True(state.MessageOpacity > 0);
+    }
+
+    [Fact]
+    public void FromDisplayLevel_UrgentThreshold_ShowsUrgentReminder()
+    {
+        var state = OverlayState.FromDisplayLevel(85, hintStart: 30, urgentLevel: 80);
+
+        Assert.Equal("请立即调整坐姿！", state.MessageText);
+        Assert.True(state.MessageOpacity > 0.9);
         Assert.Equal(3, state.SeverityLevel);
     }
 
