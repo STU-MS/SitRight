@@ -1,3 +1,5 @@
+using System;
+
 namespace SitRight.Models;
 
 public class AppConfig
@@ -10,4 +12,6 @@ public class AppConfig
     public double MaxMaskOpacity { get; set; } = 0.70;
     public int HintStartLevel { get; set; } = 30;
     public int UrgentLevel { get; set; } = 80;
+    public int CalibrationBaseline { get; set; } = 0;
+    public DateTime? CalibratedAt { get; set; }
 }

@@ -1,4 +1,3 @@
-using Xunit;
 using SitRight.Models;
 
 namespace SitRight.Models;
@@ -17,5 +16,7 @@ public class AppConfigTests
         Assert.Equal(0.70, config.MaxMaskOpacity);
         Assert.Equal(30, config.HintStartLevel);
         Assert.Equal(80, config.UrgentLevel);
+        Assert.Equal(0, config.CalibrationBaseline);
+        Assert.Null(config.CalibratedAt);
     }
 }
