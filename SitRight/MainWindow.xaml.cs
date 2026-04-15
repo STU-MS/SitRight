@@ -1,7 +1,5 @@
 using System;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
 using System.Windows.Threading;
 using SitRight.Models;
 using SitRight.Services;
@@ -12,136 +10,48 @@ public partial class MainWindow : Window
 {
     private bool _isSimulationMode;
     private readonly OverlayWindow _overlay;
-    private readonly DispatcherTimer _timeoutTimer;
+    private readonly ConfigService _configService;
+    private readonly CalibrationService _calibrationService;
+    private readonly BlurController _blurController;
+    private readonly DispatcherTimer _displayTimer;
 
-    public SerialService SerialService { get; } = new();
-    public DeviceProtocol Protocol { get; } = new();
-    public DeviceStateManager StateManager { get; } = new();
+    private AppConfig _config;
+    private int _lastRawValue;
 
     public MainWindow()
     {
         InitializeComponent();
 
+        _configService = new ConfigService();
+        _calibrationService = new CalibrationService();
+        _config = _configService.Load();
+        _blurController = new BlurController(alpha: _config.SmoothingAlpha);
+        _blurController.DisplayValueChanged += OnDisplayValueChanged;
+
+        _displayTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(_config.DisplayRefreshIntervalMs)
+        };
+        _displayTimer.Tick += (_, _) => _blurController.Tick();
+        _displayTimer.Start();
+
         _overlay = new OverlayWindow();
         _overlay.Show();
 
-        BindEvents();
-        RefreshPorts();
-        UpdateStatus(StateManager.State);
-
-        _timeoutTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(500)
-        };
-        _timeoutTimer.Tick += (_, _) => StateManager.CheckTimeout();
-        _timeoutTimer.Start();
-
+        UpdateCalibrationInfo();
         Log("应用程序已启动");
     }
 
-    private void BindEvents()
+    private void CalibrateButton_Click(object sender, RoutedEventArgs e)
     {
-        RefreshButton.Click += (_, _) => RefreshPorts();
-        ConnectButton.Click += ConnectButtonClicked;
+        var baselineSource = _isSimulationMode ? (int)SimulatedValueSlider.Value : _lastRawValue;
 
-        SerialService.OnConnected += () =>
-        {
-            StateManager.OnConnected();
-            Dispatcher.Invoke(() =>
-            {
-                ConnectButton.Content = "断开";
-                Log($"串口已连接: {SerialService.CurrentPort}");
-            });
-        };
+        _calibrationService.ApplyCalibration(_config, baselineSource, DateTime.Now);
+        _configService.Save(_config);
+        UpdateCalibrationInfo();
 
-        SerialService.OnDisconnected += () =>
-        {
-            StateManager.OnDisconnected();
-            Dispatcher.Invoke(() =>
-            {
-                ConnectButton.Content = "连接";
-                Log("串口已断开");
-            });
-        };
-
-        SerialService.OnError += ex =>
-        {
-            StateManager.OnFault(ex.Message);
-            Dispatcher.Invoke(() => Log($"串口错误: {ex.Message}"));
-        };
-
-        SerialService.OnLineReceived += line =>
-        {
-            if (!Protocol.TryParse(line, out var value))
-            {
-                Dispatcher.Invoke(() => Log($"收到非法串口数据: {line}"));
-                return;
-            }
-
-            StateManager.ReceiveRawValue(value);
-            Dispatcher.Invoke(() =>
-            {
-                RawValueText.Text = value.ToString();
-                DisplayValueText.Text = value.ToString();
-                LastReceiveTimeText.Text = DateTime.Now.ToString("HH:mm:ss");
-            });
-        };
-
-        StateManager.OnStateChanged += state => Dispatcher.Invoke(() => UpdateStatus(state));
-    }
-
-    private void ConnectButtonClicked(object? sender, RoutedEventArgs e)
-    {
-        if (SerialService.IsConnected)
-        {
-            SerialService.Disconnect();
-            return;
-        }
-
-        var portName = ComPortComboBox.SelectedItem as string;
-        if (string.IsNullOrWhiteSpace(portName))
-        {
-            Log("请先选择 COM 口");
-            return;
-        }
-
-        StateManager.OnConnecting();
-
-        try
-        {
-            SerialService.Connect(portName, GetSelectedBaudRate());
-        }
-        catch (Exception ex)
-        {
-            StateManager.OnFault(ex.Message);
-            Log($"连接失败: {ex.Message}");
-        }
-    }
-
-    private int GetSelectedBaudRate()
-    {
-        if (BaudRateComboBox.SelectedItem is ComboBoxItem comboBoxItem)
-        {
-            var contentText = comboBoxItem.Content?.ToString();
-            if (int.TryParse(contentText, out var comboValue))
-                return comboValue;
-        }
-
-        if (int.TryParse(BaudRateComboBox.Text, out var textValue))
-            return textValue;
-
-        return 115200;
-    }
-
-    private void RefreshPorts()
-    {
-        var ports = SerialService.GetAvailablePorts();
-        ComPortComboBox.ItemsSource = ports;
-
-        if (ports.Length > 0 && ComPortComboBox.SelectedItem is null)
-            ComPortComboBox.SelectedIndex = 0;
-
-        Log($"已刷新串口列表: {ports.Length} 个端口");
+        _blurController.Reset();
+        PushRawValue(baselineSource);
     }
 
     private void SimulationModeChanged(object sender, RoutedEventArgs e)
@@ -151,28 +61,49 @@ public partial class MainWindow : Window
 
         if (_isSimulationMode)
         {
-            var level = SimulatedValueSlider.Value;
-            _overlay.ApplyState(OverlayState.FromDisplayLevel(level));
-            return;
+            PushRawValue((int)SimulatedValueSlider.Value);
         }
 
         _overlay.ApplyState(new OverlayState
         {
-            MaskOpacity = 0,
-            EdgeOpacity = 0,
-            MessageOpacity = 0,
-            MessageText = string.Empty,
-            BlockInput = false
-        });
+            _blurController.Reset();
+            _overlay.ApplyState(new OverlayState());
+        }
     }
 
     private void SimulatedValueSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        var level = e.NewValue;
-        SimulatedValueText.Text = ((int)level).ToString();
+        SimulatedValueText.Text = ((int)e.NewValue).ToString();
 
         if (_isSimulationMode)
-            _overlay.ApplyState(OverlayState.FromDisplayLevel(level));
+        {
+            PushRawValue((int)e.NewValue);
+        }
+    }
+
+    private void PushRawValue(int rawValue)
+    {
+        _lastRawValue = rawValue;
+        var normalized = _calibrationService.Normalize(rawValue, _config.CalibrationBaseline);
+        _blurController.PushRawValue(normalized);
+    }
+
+    private void OnDisplayValueChanged(double displayValue)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            DisplayValueText.Text = displayValue.ToString("F1");
+            _overlay.ApplyState(OverlayState.FromDisplayLevel(
+                displayValue,
+                _config.HintStartLevel,
+                _config.UrgentLevel));
+        });
+    }
+
+    private void UpdateCalibrationInfo()
+    {
+        CalibrationBaselineText.Text = _config.CalibrationBaseline.ToString();
+        CalibrationTimeText.Text = _config.CalibratedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "未校准";
     }
 
     protected void Log(string message)

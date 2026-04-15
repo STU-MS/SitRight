@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="SitRight - 坐姿矫正仪"
-        Width="480" Height="400"
+        Width="520" Height="520"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -61,8 +62,34 @@
             </StackPanel>
         </GroupBox>
 
+        <!-- 姿势校准区 -->
+        <GroupBox Grid.Row="3" Header="姿势校准" Margin="0,0,0,12">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="当前基线" Margin="0,0,12,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="CalibrationBaselineText" Text="0"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="最近校准" Margin="0,0,12,8"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CalibrationTimeText" Text="未校准"/>
+                <Button Grid.Row="2"
+                        Grid.ColumnSpan="2"
+                        x:Name="CalibrateButton"
+                        Content="校准当前姿势"
+                        Height="32"
+                        Click="CalibrateButton_Click"/>
+            </Grid>
+        </GroupBox>
+
         <!-- 日志区域 -->
-        <GroupBox Grid.Row="3" Header="日志">
+        <GroupBox Grid.Row="4" Header="日志">
             <ScrollViewer>
                 <TextBox x:Name="LogTextBox" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="11"/>
