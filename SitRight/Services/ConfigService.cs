@@ -38,6 +38,10 @@ public class ConfigService
 
     public void Save(AppConfig config)
     {
+        var directory = Path.GetDirectoryName(_configPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
         var options = new JsonSerializerOptions { WriteIndented = true };
         var json = JsonSerializer.Serialize(config, options);
         File.WriteAllText(_configPath, json);

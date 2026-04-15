@@ -12,8 +12,9 @@ public class MainViewModelTests
     private readonly DeviceProtocol _protocol;
     private readonly DeviceStateManager _stateManager;
     private readonly ValueMapper _valueMapper;
+    private readonly string _testPath;
     private readonly ConfigService _configService;
-    private readonly MainViewModel _viewModel;
+    private MainViewModel _viewModel;
 
     public MainViewModelTests()
     {
@@ -24,15 +25,10 @@ public class MainViewModelTests
         _stateManager = new DeviceStateManager();
         _valueMapper = new ValueMapper();
 
-        var testPath = Path.Combine(Path.GetTempPath(), $"test_vm_{Guid.NewGuid()}.json");
-        _configService = new ConfigService(testPath);
+        _testPath = Path.Combine(Path.GetTempPath(), $"test_vm_{Guid.NewGuid()}.json");
+        _configService = new ConfigService(_testPath);
 
-        _viewModel = new MainViewModel(
-            _mockSerial.Object,
-            _protocol,
-            _stateManager,
-            _valueMapper,
-            _configService);
+        _viewModel = CreateViewModel();
     }
 
     [Fact]
@@ -116,5 +112,74 @@ public class MainViewModelTests
         _viewModel.SimulateValue(50);
 
         Assert.NotNull(receivedState);
+    }
+
+    [Fact]
+    public void Constructor_WithPersistedCalibration_RestoresCalibrationAndMapper()
+    {
+        var calibratedAt = new DateTime(2026, 4, 15, 10, 30, 0, DateTimeKind.Local);
+        _configService.Save(new AppConfig
+        {
+            CalibratedNormalAngle = 10,
+            CalibratedSlouchAngle = 25,
+            CalibratedAt = calibratedAt
+        });
+
+        _viewModel = CreateViewModel();
+
+        OverlayState? receivedState = null;
+        _viewModel.OnOverlayStateChanged += state => receivedState = state;
+        _viewModel.IsSimulationMode = true;
+        _viewModel.SimulateValue(25);
+
+        Assert.Equal(CalibrationState.FullyCalibrated, _viewModel.CalibrationData.State);
+        Assert.Equal(10, _viewModel.CalibrationData.NormalAngle);
+        Assert.Equal(25, _viewModel.CalibrationData.SlouchAngle);
+        Assert.Equal(calibratedAt, _viewModel.CalibrationData.LastCalibrated);
+        Assert.NotNull(receivedState);
+        Assert.True(receivedState!.MaskOpacity > 0.6);
+    }
+
+    [Fact]
+    public void CalibrationAck_WhenFullyCalibrated_PersistsCalibrationToConfig()
+    {
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL,ANGLE:10.0");
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_SLOUCH,ANGLE:25.0");
+
+        var reloaded = new ConfigService(_testPath).Load();
+
+        Assert.Equal(10.0, reloaded.CalibratedNormalAngle);
+        Assert.Equal(25.0, reloaded.CalibratedSlouchAngle);
+        Assert.NotNull(reloaded.CalibratedAt);
+    }
+
+    [Fact]
+    public void CalibrationAck_ClearsExistingOverlayState()
+    {
+        OverlayState? receivedState = null;
+        _viewModel.OnOverlayStateChanged += state => receivedState = state;
+
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL,ANGLE:10.0");
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_SLOUCH,ANGLE:25.0");
+        _viewModel.IsSimulationMode = true;
+        _viewModel.SimulateValue(25);
+
+        Assert.NotNull(receivedState);
+        Assert.True(receivedState!.MaskOpacity > 0.6);
+
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL,ANGLE:11.0");
+
+        Assert.Equal(0, receivedState.MaskOpacity);
+        Assert.Equal(string.Empty, receivedState.MessageText);
+    }
+
+    private MainViewModel CreateViewModel()
+    {
+        return new MainViewModel(
+            _mockSerial.Object,
+            _protocol,
+            _stateManager,
+            _valueMapper,
+            _configService);
     }
 }

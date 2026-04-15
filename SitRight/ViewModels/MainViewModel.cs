@@ -13,6 +13,10 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly DeviceProtocol _protocol;
     private readonly DeviceStateManager _stateManager;
     private readonly ValueMapper _valueMapper;
+    private readonly ConfigService _configService;
+    private readonly CalibrationService _calibrationService;
+    private readonly BlurController _blurController;
+    private readonly AppConfig _config;
 
     private string _statusText = "Disconnected";
     private string _rawValueText = "--";
@@ -24,11 +28,34 @@ public class MainViewModel : INotifyPropertyChanged
     private string _normalAngleText = "--";
     private string _slouchAngleText = "--";
 
+    public MainViewModel(
+        ISerialService serialService,
+        DeviceProtocol protocol,
+        DeviceStateManager stateManager,
+        ValueMapper valueMapper,
+        ConfigService configService)
+    {
+        _serialService = serialService;
+        _protocol = protocol;
+        _stateManager = stateManager;
+        _valueMapper = valueMapper;
+        _configService = configService;
+        _calibrationService = new CalibrationService();
+        _config = _configService.Load();
+        _blurController = new BlurController(_config.SmoothingAlpha);
+
+        BindEvents();
+        SubscribeCalibrationChanges();
+        RestoreCalibrationFromConfig();
+        UpdateCalibrationUI();
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action<DeviceConnectionState>? OnConnectionStateChanged;
     public event Action<OverlayState>? OnOverlayStateChanged;
     public event Action<bool>? OnSimulationModeChanged;
     public event Action<CalibrationData>? OnCalibrationChanged;
+    public event Action<string>? OnLog;
 
     public CalibrationData CalibrationData { get; } = new();
 
@@ -94,87 +121,37 @@ public class MainViewModel : INotifyPropertyChanged
 
     public string[] AvailablePorts => _serialService.GetAvailablePorts();
 
-    public MainViewModel(
-        ISerialService serialService,
-        DeviceProtocol protocol,
-        DeviceStateManager stateManager,
-        ValueMapper valueMapper,
-        ConfigService configService)
-    {
-        _serialService = serialService;
-        _protocol = protocol;
-        _stateManager = stateManager;
-        _valueMapper = valueMapper;
-
-        BindEvents();
-
-        // ===================== 新增：绑定校准变化事件 =====================
-        SubscribeCalibrationChanges();
-    }
-
-    public event Action<string>? OnLog;
-
     private void BindEvents()
     {
         _serialService.OnLineReceived += line =>
         {
-            // [诊断1] 串口原始数据
-            OnLog?.Invoke($"[DIAG-1] 串口收到: \"{line}\"");
+            OnLog?.Invoke($"[DIAG-1] serial: \"{line}\"");
 
-            if (_protocol.TryParseFull(line, out var type, out var value, out var ack, out var err))
+            if (!_protocol.TryParseFull(line, out var type, out var value, out var ack, out var err))
             {
-                // [诊断2] 协议解析结果
-                OnLog?.Invoke($"[DIAG-2] 解析成功: type={type}, value={value}");
-
-                switch (type)
-                {
-                    case ProtocolLineType.RuntimeData:
-                        _stateManager.ReceiveRawValue(value);
-                        RawValueText = value.ToString();
-                        LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
-                        DisplayValueText = value.ToString();
-
-                        // 只有在完全校准后才触发遮罩渲染
-                        if (CalibrationData.State == CalibrationState.FullyCalibrated)
-                        {
-                            var overlayState = _valueMapper.Map(value);
-                            // [诊断3] Overlay 状态计算结果
-                            OnLog?.Invoke($"[DIAG-3] Overlay: opacity={overlayState.MaskOpacity:F3}, color={overlayState.MaskColor}, edge={overlayState.EdgeOpacity:F3}");
-                            // [诊断4] 即将触发 OnOverlayStateChanged
-                            OnLog?.Invoke($"[DIAG-4] OnOverlayStateChanged 订阅者数: {OnOverlayStateChanged?.GetInvocationList()?.Length ?? 0}");
-                            OnOverlayStateChanged?.Invoke(overlayState);
-                        }
-                        else
-                        {
-                            // 校准期间不触发遮罩渲染，确保屏幕不会变灰
-                            OnLog?.Invoke($"[DIAG-3] 校准未完成，跳过遮罩渲染");
-                        }
-                        break;
-
-                    case ProtocolLineType.CalibrationAck:
-                        CalibrationData.ApplyAck(ack!);
-                        UpdateCalibrationUI();
-                        OnCalibrationChanged?.Invoke(CalibrationData);
-                        break;
-
-                    case ProtocolLineType.CalibrationErr:
-                        CalibrationData.ApplyError(err!);
-                        UpdateCalibrationUI();
-                        OnCalibrationChanged?.Invoke(CalibrationData);
-                        break;
-                }
+                OnLog?.Invoke($"[DIAG-2] parse failed: \"{line}\"");
+                return;
             }
-            else
+
+            switch (type)
             {
-                // [诊断2] 协议解析失败 — 关键：数据格式不匹配！
-                OnLog?.Invoke($"[DIAG-2] 解析失败，丢弃: \"{line}\"");
+                case ProtocolLineType.RuntimeData:
+                    HandleInputValue(value, updateDeviceState: true);
+                    break;
+
+                case ProtocolLineType.CalibrationAck:
+                    HandleCalibrationAck(ack!);
+                    break;
+
+                case ProtocolLineType.CalibrationErr:
+                    CalibrationData.ApplyError(err!);
+                    UpdateCalibrationUI();
+                    OnCalibrationChanged?.Invoke(CalibrationData);
+                    break;
             }
         };
 
-        _serialService.OnError += ex =>
-        {
-            _stateManager.OnFault(ex.Message);
-        };
+        _serialService.OnError += ex => _stateManager.OnFault(ex.Message);
 
         _serialService.OnConnected += () =>
         {
@@ -196,19 +173,67 @@ public class MainViewModel : INotifyPropertyChanged
         };
     }
 
-    // ===================== 新增：校准完成后同步基准角到 ValueMapper =====================
-    private void SyncCalibrationToValueMapper(CalibrationData calibrationData)
+    private void HandleInputValue(int value, bool updateDeviceState)
     {
-        if (calibrationData.State == CalibrationState.FullyCalibrated)
+        if (updateDeviceState)
+            _stateManager.ReceiveRawValue(value);
+
+        RawValueText = value.ToString();
+        LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
+
+        _blurController.PushRawValue(value);
+        _blurController.Tick();
+        DisplayValueText = _blurController.DisplayValue.ToString("F1");
+
+        if (CalibrationData.State == CalibrationState.FullyCalibrated)
         {
-            _valueMapper.SetCalibration(
-                (int)(calibrationData.NormalAngle ?? 0),
-                (int)(calibrationData.SlouchAngle ?? 0));
-            OnLog?.Invoke($"[CALIB] 校准完成 → 已同步校准数据到 ValueMapper: Normal={calibrationData.NormalAngle:F2}°, Slouch={calibrationData.SlouchAngle:F2}°");
+            var overlayState = _valueMapper.Map(value);
+            OnOverlayStateChanged?.Invoke(overlayState);
+        }
+        else
+        {
+            OnLog?.Invoke("[DIAG-3] calibration incomplete, overlay skipped");
         }
     }
 
-    // ===================== 新增：订阅校准变化事件 =====================
+    private void HandleCalibrationAck(CalibrationAckData ack)
+    {
+        CalibrationData.ApplyAck(ack);
+        PersistCalibration();
+        UpdateCalibrationUI();
+        OnCalibrationChanged?.Invoke(CalibrationData);
+        ClearOverlayState();
+    }
+
+    private void RestoreCalibrationFromConfig()
+    {
+        _calibrationService.RestoreFromConfig(_config, CalibrationData, _valueMapper);
+    }
+
+    private void PersistCalibration()
+    {
+        _calibrationService.PersistToConfig(_config, CalibrationData);
+        _configService.Save(_config);
+    }
+
+    private void ClearOverlayState()
+    {
+        _blurController.Reset();
+        DisplayValueText = "0.0";
+        OnOverlayStateChanged?.Invoke(new OverlayState());
+    }
+
+    private void SyncCalibrationToValueMapper(CalibrationData calibrationData)
+    {
+        if (calibrationData.State != CalibrationState.FullyCalibrated)
+            return;
+
+        _valueMapper.SetCalibration(
+            (int)Math.Round(calibrationData.NormalAngle ?? 0),
+            (int)Math.Round(calibrationData.SlouchAngle ?? 0));
+        OnLog?.Invoke($"[CALIB] mapper synced: normal={calibrationData.NormalAngle:F2}, slouch={calibrationData.SlouchAngle:F2}");
+    }
+
     private void SubscribeCalibrationChanges()
     {
         OnCalibrationChanged += SyncCalibrationToValueMapper;
@@ -249,24 +274,10 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void SimulateValue(int value)
     {
-        if (_isSimulationMode)
-        {
-            RawValueText = value.ToString();
-            LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
-            DisplayValueText = value.ToString();
+        if (!_isSimulationMode)
+            return;
 
-            // 只有在完全校准后才触发遮罩渲染
-            if (CalibrationData.State == CalibrationState.FullyCalibrated)
-            {
-                var overlayState = _valueMapper.Map(value);
-                OnOverlayStateChanged?.Invoke(overlayState);
-            }
-            else
-            {
-                // 校准期间不触发遮罩渲染，确保屏幕不会变灰
-                OnLog?.Invoke($"[DIAG-3] 校准未完成，跳过遮罩渲染");
-            }
-        }
+        HandleInputValue(value, updateDeviceState: false);
     }
 
     public void SendCalibrationCommand(string command)
@@ -279,6 +290,7 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
             return false;
+
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         return true;
