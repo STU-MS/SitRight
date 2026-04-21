@@ -15,7 +15,6 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ValueMapper _valueMapper;
     private readonly ConfigService _configService;
     private readonly CalibrationService _calibrationService;
-    private readonly BlurController _blurController;
     private readonly AppConfig _config;
 
     private string _statusText = "Disconnected";
@@ -42,7 +41,6 @@ public class MainViewModel : INotifyPropertyChanged
         _configService = configService;
         _calibrationService = new CalibrationService();
         _config = _configService.Load();
-        _blurController = new BlurController(_config.SmoothingAlpha);
 
         BindEvents();
         SubscribeCalibrationChanges();
@@ -180,10 +178,7 @@ public class MainViewModel : INotifyPropertyChanged
 
         RawValueText = value.ToString();
         LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
-
-        _blurController.PushRawValue(value);
-        _blurController.Tick();
-        DisplayValueText = _blurController.DisplayValue.ToString("F1");
+        DisplayValueText = value.ToString();
 
         if (CalibrationData.State == CalibrationState.FullyCalibrated)
         {
@@ -218,8 +213,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void ClearOverlayState()
     {
-        _blurController.Reset();
-        DisplayValueText = "0.0";
+        DisplayValueText = "0";
         OnOverlayStateChanged?.Invoke(new OverlayState());
     }
 

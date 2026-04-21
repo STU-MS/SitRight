@@ -36,7 +36,7 @@ cd SitRight && dotnet publish -c Release -r win-x64 --self-contained true -p:Pub
 
 数据流：
 ```
-MPU6050 → Arduino(计算blurLevel 0-100) → USB Serial → SerialService → DeviceProtocol(解析) → BlurController(平滑) → ValueMapper(映射) → OverlayWindow(全屏遮罩)
+MPU6050 → Arduino(计算blurLevel 0-100) → USB Serial → SerialService → DeviceProtocol(解析) → ValueMapper(映射) → OverlayWindow(全屏遮罩)
 ```
 
 ### Key Components (SitRight/)
@@ -46,7 +46,6 @@ MPU6050 → Arduino(计算blurLevel 0-100) → USB Serial → SerialService → 
   - `SerialService` / `ISerialService` — 串口通信抽象，事件驱动（`OnLineReceived`）
   - `DeviceProtocol` — 文本行协议解析器（运行数据、ACK、ERR 三种消息）
   - `DeviceStateManager` — 设备连接状态机（Disconnected→Connecting→ConnectedIdle→Receiving→Timeout/Fault）
-  - `BlurController` — 指数移动平均平滑（alpha=0.18）
   - `ValueMapper` — blurLevel 到 OverlayState 的映射，结合校准角度
   - `CalibrationService` — 校准数据持久化（通过 ConfigService）
   - `ConfigService` — JSON 配置文件读写（config.json，带内存缓存）
