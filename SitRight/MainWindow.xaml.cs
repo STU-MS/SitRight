@@ -130,13 +130,11 @@ public partial class MainWindow : Window
         _viewModel.OnCalibrationChanged += _ => Dispatcher.Invoke(() =>
         {
             CalibrationStatusText.Text = _viewModel.CalibrationStatusText;
-            NormalAngleText.Text = _viewModel.NormalAngleText;
-            SlouchAngleText.Text = _viewModel.SlouchAngleText;
 
             var data = _viewModel.CalibrationData;
             if (data.State == CalibrationState.Error)
                 Log($"校准错误: {data.LastError}");
-            else if (data.LastCalibrated.HasValue)
+            else
                 Log($"校准状态: {_viewModel.CalibrationStatusText}");
         });
     }
