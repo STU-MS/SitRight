@@ -11,7 +11,4 @@ public class AppConfig
     public int HintStartLevel { get; set; } = 30;
     public int UrgentLevel { get; set; } = 80;
     public int TargetMonitorIndex { get; set; } = 0;
-    public double? CalibratedNormalAngle { get; set; }
-    public double? CalibratedSlouchAngle { get; set; }
-    public DateTime? CalibratedAt { get; set; }
 }

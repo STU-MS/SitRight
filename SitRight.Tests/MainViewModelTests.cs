@@ -105,9 +105,6 @@ public class MainViewModelTests
         OverlayState? receivedState = null;
         _viewModel.OnOverlayStateChanged += state => receivedState = state;
 
-        // 设置为完全校准状态，以便触发遮罩渲染
-        _viewModel.CalibrationData.ApplyAck(new CalibrationAckData("SET_SLOUCH", new Dictionary<string, string> { { "ANGLE", "10.0" } }));
-
         _viewModel.IsSimulationMode = true;
         _viewModel.SimulateValue(50);
 
@@ -115,62 +112,60 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public void Constructor_WithPersistedCalibration_RestoresCalibrationAndMapper()
+    public void SimulateValue_AutoSetsFullyCalibrated()
     {
-        var calibratedAt = new DateTime(2026, 4, 15, 10, 30, 0, DateTimeKind.Local);
-        _configService.Save(new AppConfig
-        {
-            CalibratedNormalAngle = 10,
-            CalibratedSlouchAngle = 25,
-            CalibratedAt = calibratedAt
-        });
-
-        _viewModel = CreateViewModel();
-
-        OverlayState? receivedState = null;
-        _viewModel.OnOverlayStateChanged += state => receivedState = state;
         _viewModel.IsSimulationMode = true;
-        _viewModel.SimulateValue(25);
+        _viewModel.SimulateValue(50);
 
         Assert.Equal(CalibrationState.FullyCalibrated, _viewModel.CalibrationData.State);
-        Assert.Equal(10, _viewModel.CalibrationData.NormalAngle);
-        Assert.Equal(25, _viewModel.CalibrationData.SlouchAngle);
-        Assert.Equal(calibratedAt, _viewModel.CalibrationData.LastCalibrated);
-        Assert.NotNull(receivedState);
-        Assert.True(receivedState!.MaskOpacity > 0.6);
+        Assert.Equal("完全校准", _viewModel.CalibrationStatusText);
     }
 
     [Fact]
-    public void CalibrationAck_WhenFullyCalibrated_PersistsCalibrationToConfig()
+    public void RuntimeData_AutoSetsFullyCalibrated()
     {
-        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL,ANGLE:10.0");
-        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_SLOUCH,ANGLE:25.0");
+        _mockSerial.Raise(s => s.OnLineReceived += null, "42");
 
-        var reloaded = new ConfigService(_testPath).Load();
-
-        Assert.Equal(10.0, reloaded.CalibratedNormalAngle);
-        Assert.Equal(25.0, reloaded.CalibratedSlouchAngle);
-        Assert.NotNull(reloaded.CalibratedAt);
+        Assert.Equal(CalibrationState.FullyCalibrated, _viewModel.CalibrationData.State);
     }
 
     [Fact]
-    public void CalibrationAck_ClearsExistingOverlayState()
+    public void CalibrationAck_UpdatesCalibrationState()
+    {
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL");
+
+        Assert.Equal(CalibrationState.NormalSet, _viewModel.CalibrationData.State);
+        Assert.Equal("已校准坐正", _viewModel.CalibrationStatusText);
+
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_SLOUCH");
+
+        Assert.Equal(CalibrationState.FullyCalibrated, _viewModel.CalibrationData.State);
+        Assert.Equal("完全校准", _viewModel.CalibrationStatusText);
+    }
+
+    [Fact]
+    public void CalibrationAck_ClearsOverlayState()
     {
         OverlayState? receivedState = null;
         _viewModel.OnOverlayStateChanged += state => receivedState = state;
 
-        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL,ANGLE:10.0");
-        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_SLOUCH,ANGLE:25.0");
         _viewModel.IsSimulationMode = true;
-        _viewModel.SimulateValue(25);
-
+        _viewModel.SimulateValue(50);
         Assert.NotNull(receivedState);
-        Assert.True(receivedState!.MaskOpacity > 0.6);
 
-        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL,ANGLE:11.0");
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ACK:SET_NORMAL");
 
-        Assert.Equal(0, receivedState.MaskOpacity);
+        Assert.Equal(0, receivedState!.MaskOpacity);
         Assert.Equal(string.Empty, receivedState.MessageText);
+    }
+
+    [Fact]
+    public void CalibrationErr_SetsErrorState()
+    {
+        _mockSerial.Raise(s => s.OnLineReceived += null, "ERR:BUSY");
+
+        Assert.Equal(CalibrationState.Error, _viewModel.CalibrationData.State);
+        Assert.Contains("BUSY", _viewModel.CalibrationStatusText);
     }
 
     private MainViewModel CreateViewModel()

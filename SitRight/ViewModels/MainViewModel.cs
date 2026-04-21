@@ -14,7 +14,6 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly DeviceStateManager _stateManager;
     private readonly ValueMapper _valueMapper;
     private readonly ConfigService _configService;
-    private readonly CalibrationService _calibrationService;
     private readonly AppConfig _config;
 
     private string _statusText = "Disconnected";
@@ -24,8 +23,6 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isConnected;
     private bool _isSimulationMode;
     private string _calibrationStatusText = "未校准";
-    private string _normalAngleText = "--";
-    private string _slouchAngleText = "--";
 
     public MainViewModel(
         ISerialService serialService,
@@ -39,13 +36,9 @@ public class MainViewModel : INotifyPropertyChanged
         _stateManager = stateManager;
         _valueMapper = valueMapper;
         _configService = configService;
-        _calibrationService = new CalibrationService();
         _config = _configService.Load();
 
         BindEvents();
-        SubscribeCalibrationChanges();
-        RestoreCalibrationFromConfig();
-        UpdateCalibrationUI();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -103,18 +96,6 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _calibrationStatusText;
         private set => SetProperty(ref _calibrationStatusText, value);
-    }
-
-    public string NormalAngleText
-    {
-        get => _normalAngleText;
-        private set => SetProperty(ref _normalAngleText, value);
-    }
-
-    public string SlouchAngleText
-    {
-        get => _slouchAngleText;
-        private set => SetProperty(ref _slouchAngleText, value);
     }
 
     public string[] AvailablePorts => _serialService.GetAvailablePorts();
@@ -180,57 +161,30 @@ public class MainViewModel : INotifyPropertyChanged
         LastReceiveTimeText = DateTime.Now.ToString("HH:mm:ss");
         DisplayValueText = value.ToString();
 
-        if (CalibrationData.State == CalibrationState.FullyCalibrated)
+        // 收到 RuntimeData 意味着固件已校准（未校准固件不发数据）
+        if (CalibrationData.State != CalibrationState.FullyCalibrated)
         {
-            var overlayState = _valueMapper.Map(value);
-            OnOverlayStateChanged?.Invoke(overlayState);
+            CalibrationData.State = CalibrationState.FullyCalibrated;
+            UpdateCalibrationUI();
+            OnCalibrationChanged?.Invoke(CalibrationData);
         }
-        else
-        {
-            OnLog?.Invoke("[DIAG-3] calibration incomplete, overlay skipped");
-        }
+
+        var overlayState = _valueMapper.Map(value);
+        OnOverlayStateChanged?.Invoke(overlayState);
     }
 
     private void HandleCalibrationAck(CalibrationAckData ack)
     {
         CalibrationData.ApplyAck(ack);
-        PersistCalibration();
         UpdateCalibrationUI();
         OnCalibrationChanged?.Invoke(CalibrationData);
         ClearOverlayState();
-    }
-
-    private void RestoreCalibrationFromConfig()
-    {
-        _calibrationService.RestoreFromConfig(_config, CalibrationData, _valueMapper);
-    }
-
-    private void PersistCalibration()
-    {
-        _calibrationService.PersistToConfig(_config, CalibrationData);
-        _configService.Save(_config);
     }
 
     private void ClearOverlayState()
     {
         DisplayValueText = "0";
         OnOverlayStateChanged?.Invoke(new OverlayState());
-    }
-
-    private void SyncCalibrationToValueMapper(CalibrationData calibrationData)
-    {
-        if (calibrationData.State != CalibrationState.FullyCalibrated)
-            return;
-
-        _valueMapper.SetCalibration(
-            (int)Math.Round(calibrationData.NormalAngle ?? 0),
-            (int)Math.Round(calibrationData.SlouchAngle ?? 0));
-        OnLog?.Invoke($"[CALIB] mapper synced: normal={calibrationData.NormalAngle:F2}, slouch={calibrationData.SlouchAngle:F2}");
-    }
-
-    private void SubscribeCalibrationChanges()
-    {
-        OnCalibrationChanged += SyncCalibrationToValueMapper;
     }
 
     private void UpdateCalibrationUI()
@@ -243,14 +197,6 @@ public class MainViewModel : INotifyPropertyChanged
             CalibrationState.Error => $"错误: {CalibrationData.LastError}",
             _ => "--"
         };
-
-        NormalAngleText = CalibrationData.NormalAngle.HasValue
-            ? $"{CalibrationData.NormalAngle.Value:F2}°"
-            : "--";
-
-        SlouchAngleText = CalibrationData.SlouchAngle.HasValue
-            ? $"{CalibrationData.SlouchAngle.Value:F2}°"
-            : "--";
     }
 
     public void Connect(string portName, int baudRate)

@@ -15,8 +15,5 @@ public class AppConfigTests
         Assert.Equal(0.70, config.MaxMaskOpacity);
         Assert.Equal(30, config.HintStartLevel);
         Assert.Equal(80, config.UrgentLevel);
-        Assert.Null(config.CalibratedNormalAngle);
-        Assert.Null(config.CalibratedSlouchAngle);
-        Assert.Null(config.CalibratedAt);
     }
 }
