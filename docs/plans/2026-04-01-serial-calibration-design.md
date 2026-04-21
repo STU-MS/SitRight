@@ -1,161 +1,302 @@
-# 串口主动触发校准设计
+# 串口校准协议设计文档
 
-- 日期：2026-04-01
-- 范围：基于 `lab/1st_text.ino` 的现有姿态采集与上报流程，新增上位机主动触发校准能力
-- 目标：支持两类校准命令
-  - 校准坐正角度（normal）
-  - 校准驼背角度（slouch）
+**创建日期:** 2026-04-02
+**状态:** 待实现
+**关联文档:** 坐姿矫正仪开发计划 第6章、Plan B (2026-03-23-02-serial-communication.md)
 
-## 1. 背景与目标
+---
 
-当前固件已具备 MPU6050 角度采集与串口输出能力，但缺少由上位机主动触发“姿态基准校准”的接口。本设计在不破坏现有上报链路的前提下，新增串口命令接口与持久化能力。
+## 1. 概述
 
-关键约束：
-- 命令协议采用 `KEY:VALUE` 风格。
-- 命令字固定为：
-  - `CMD:SET_NORMAL`
-  - `CMD:SET_SLOUCH`
-- 成功回包需要携带采样角度。
-- 校准使用平均采样策略：500ms 内采样 10 次求平均。
-- 校准值需要持久化到 EEPROM，掉电可恢复。
-- `normal` 与 `slouch` 不要求大小关系；后续算法统一取绝对值偏差。
+本文档定义 SitRight 串口双通道协议中校准通道的详细规范，包括：
+- PC → MCU 的校准命令格式
+- MCU → PC 的校准回包格式（ACK/ERR）
+- PC 端软件的解析与状态管理
+- 校准 UI 交互流程
 
-## 2. 方案选择
+当前 DeviceProtocol 仅实现了运行态通道（纯整数 0-100），ACK/ERR 行被当作非法数据丢弃。本文档描述的扩展将使 DeviceProtocol 能够同时处理两种通道。
 
-已评估三类方案：
-- 最小改动（主循环就地处理）
-- 命令驱动 + 状态机 + EEPROM 原子写入（推荐）
-- 非阻塞异步采样队列
+---
 
-最终采用：命令驱动校准 + 状态机 + EEPROM 原子写入。
+## 2. 协议格式定义
 
-选择理由：
-- 在实现复杂度与可维护性之间平衡最好。
-- 便于后续扩展查询命令、重置命令、版本迁移。
-- 能明确区分命令解析、采样执行、持久化与回包职责。
+### 2.1 运行态数据（设备 → PC）
 
-## 3. 架构设计
+格式不变，保持现有实现：
 
-### 3.1 模块边界
+```txt
+<number>\n
+```
 
-1. 串口命令层
-- 负责按行接收并识别命令。
-- 支持：`CMD:SET_NORMAL`、`CMD:SET_SLOUCH`。
-- 不直接执行采样和 EEPROM 写入。
+示例：`0`、`37`、`100`
 
-2. 校准执行层
-- 按固定策略执行采样（500ms / 10 次平均）。
-- 输出校准角度 `avgAngle`。
+### 2.2 校准命令（PC → 设备）
 
-3. 参数存储层
-- 负责 EEPROM 的读取、写入、版本与魔数校验。
-- 上电恢复 `normal` 与 `slouch`。
+PC 通过串口向 MCU 发送校准命令，格式为 `CMD:` 前缀 + 命令名称：
 
-4. 协议回包层
-- 统一输出 ACK/ERR 结果。
-- 成功回包带角度；失败回包带错误码。
+| 命令 | 格式 | 含义 |
+|------|------|------|
+| 校准坐正角度 | `CMD:SET_NORMAL\n` | 用户当前坐姿为"正确"姿态，MCU 记录该角度 |
+| 校准驼背角度 | `CMD:SET_SLOUCH\n` | 用户当前坐姿为"驼背"姿态，MCU 记录该角度 |
+| 查询校准状态 | `CMD:GET_STATUS\n` | 查询 MCU 当前校准状态（可选） |
+| 重置校准 | `CMD:RESET\n` | 清除 MCU 存储的所有校准数据（可选） |
 
-5. 现有采集上报层
-- 保持原有角度采集与上报逻辑。
-- 在主循环插入命令处理入口。
+### 2.3 校准回包 ACK（设备 → PC）
 
-## 4. 协议设计
+MCU 成功执行校准命令后回复 ACK，格式为 `ACK:` 前缀：
 
-### 4.1 输入命令（上位机 -> 设备）
+```txt
+ACK:<COMMAND>,<KEY>:<VALUE>,<KEY>:<VALUE>\n
+```
 
-- `CMD:SET_NORMAL`
-- `CMD:SET_SLOUCH`
+示例：
 
-说明：以换行结尾，设备按行解析。
+```txt
+ACK:SET_NORMAL,ANGLE:12.34\n
+ACK:SET_SLOUCH,ANGLE:25.67\n
+ACK:GET_STATUS,NORMAL:12.34,SLOUCH:25.67,STATUS:CALIBRATED\n
+ACK:RESET\n
+```
 
-### 4.2 成功回包（设备 -> 上位机，始终输出）
+### 2.4 校准回包 ERR（设备 → PC）
 
-- `ACK:SET_NORMAL,ANGLE:<avgAngle>`
-- `ACK:SET_SLOUCH,ANGLE:<avgAngle>`
+MCU 无法执行命令时回复 ERR，格式为 `ERR:` 前缀：
 
-注意：ACK 回包是协议的一部分，**不受 `DEBUG_SERIAL` 编译开关控制**，始终通过串口发送。
+```txt
+ERR:<ERROR_CODE>\n
+```
 
-建议：`<avgAngle>` 固定两位小数。
+| 错误码 | 含义 |
+|--------|------|
+| `BUSY` | 设备正忙，无法执行校准（正在采集数据中） |
+| `UNKNOWN_CMD` | 未识别的命令 |
+| `NO_SENSOR` | 传感器未连接或初始化失败 |
+| `CALIBRATION_FAILED` | 校准过程失败（数据异常等） |
 
-### 4.3 失败回包（设备 -> 上位机，始终输出）
+示例：
 
-- `ERR:UNKNOWN_CMD`
-- `ERR:CALIBRATE_TIMEOUT`
-- `ERR:EEPROM_WRITE_FAIL`
-- `ERR:INVALID_DATA`
-- `ERR:BUSY`
+```txt
+ERR:BUSY\n
+ERR:UNKNOWN_CMD\n
+```
 
-## 5. 数据流与处理时序
+---
 
-1. 接收命令行，去空白并匹配命令字。
-2. 若命令合法，进入校准流程。
-3. 在 500ms 内进行 10 次采样，计算平均角度 `avgAngle`。
-4. 更新目标参数（normal 或 slouch）。
-5. 写入 EEPROM。
-6. 写入成功则返回 ACK；失败则回滚参数并返回 ERR。
+## 3. DeviceProtocol 扩展设计
 
-事务性要求：
-- 任一步失败都不污染现有有效参数。
-- 内存与 EEPROM 状态保持一致。
+### 3.1 解析结果类型
 
-## 6. 误差计算原则（后续算法约束）
+当前 `TryParse` 返回 `bool` + `out int`。扩展后需要区分三种情况：
 
-后续姿态判定统一按绝对值偏差：
+```csharp
+public enum ProtocolLineType
+{
+    RuntimeData,     // 运行态数据：纯整数 0-100
+    CalibrationAck,  // 校准确认：ACK:...
+    CalibrationErr   // 校准错误：ERR:...
+}
 
-- $errNormal = |angle - normal|$
-- $errSlouch = |angle - slouch|$
+public record CalibrationAckData(string Command, Dictionary<string, string> Fields);
+public record CalibrationErrData(string ErrorCode);
+```
 
-说明：
-- `normal` 与 `slouch` 不要求谁更大。
-- 避免依赖角度方向假设，减少误判风险。
+### 3.2 解析接口设计
 
-## 7. 边界与容错
+保留现有 `TryParse` 向后兼容，新增解析方法：
 
-1. 参数边界
-- 采样结果若超出物理可接受角度区间，返回 `ERR:INVALID_DATA`。
-- 不写入 EEPROM。
+```csharp
+// 现有方法保持不变（仅处理运行态数据）
+public bool TryParse(string? line, out int value)
 
-2. 忙碌保护
-- 校准进行中若收到新的校准命令，返回 `ERR:BUSY`。
+// 新增：完整协议行解析
+public bool TryParseFull(string? line, out ProtocolLineType type, out int runtimeValue,
+    out CalibrationAckData? ack, out CalibrationErrData? err)
+```
 
-3. 超时保护
-- 采样窗口内有效样本不足，返回 `ERR:CALIBRATE_TIMEOUT`。
-- 不改变已存参数。
+### 3.3 解析规则
 
-4. 回滚策略
-- EEPROM 写入失败时，内存参数回滚到旧值并返回 `ERR:EEPROM_WRITE_FAIL`。
+1. 输入为空/空白 → 返回 false
+2. 输入以 `ACK:` 开头 → 解析为 CalibrationAck
+   - 提取命令名（第一个逗号前）
+   - 剩余部分按 `KEY:VALUE` 格式解析到字典
+3. 输入以 `ERR:` 开头 → 解析为 CalibrationErr
+   - 提取错误码（`ERR:` 后的全部内容）
+4. 其他 → 尝试解析为整数 0-100（运行态数据）
 
-## 8. 持久化设计
+---
 
-1. 上电读取
-- `setup()` 阶段从 EEPROM 读取 `normal/slouch`。
+## 4. 校准状态管理
 
-2. 合法性校验
-- 校验魔数/版本；无效时加载默认值并回写 EEPROM。
+### 4.1 新增模型
 
-3. 写入时机
-- 仅在成功完成校准后写入。
+```csharp
+public enum CalibrationState
+{
+    NotCalibrated,    // 未校准
+    NormalSet,        // 已校准坐正角度
+    FullyCalibrated,  // 完全校准（坐正+驼背）
+    Error             // 校准错误
+}
 
-## 9. 测试与验收标准
+public class CalibrationData
+{
+    public CalibrationState State { get; set; }
+    public double? NormalAngle { get; set; }    // 坐正角度
+    public double? SlouchAngle { get; set; }    // 驼背角度
+    public string? LastError { get; set; }      // 最近错误
+    public DateTime? LastCalibrated { get; set; }
+}
+```
 
-1. 协议测试
-- 发送 `CMD:SET_NORMAL`，收到 `ACK:SET_NORMAL,ANGLE:xx.xx`。
-- 发送 `CMD:SET_SLOUCH`，收到 `ACK:SET_SLOUCH,ANGLE:xx.xx`。
-- 发送非法命令，收到 `ERR:UNKNOWN_CMD`。
+### 4.2 状态转换
 
-2. 采样稳定性测试
-- 同一姿态连续校准 5 次，离散度应低于单次采样方案。
+```mermaid
+stateDiagram-v2
+    [*] --> NotCalibrated
+    NotCalibrated --> NormalSet: ACK:SET_NORMAL
+    NormalSet --> FullyCalibrated: ACK:SET_SLOUCH
+    NotCalibrated --> Error: ERR:*
+    NormalSet --> Error: ERR:*
+    FullyCalibrated --> NormalSet: ACK:SET_NORMAL (重新校准)
+    FullyCalibrated --> FullyCalibrated: ACK:SET_SLOUCH (重新校准)
+    Error --> NormalSet: ACK:SET_NORMAL
+```
 
-3. 持久化测试
-- 校准后断电重启，`normal/slouch` 保持一致并可继续参与计算。
+---
 
-4. 异常测试
-- 校准中重复发命令，返回 `ERR:BUSY`。
-- 模拟采样不足，返回 `ERR:CALIBRATE_TIMEOUT`，旧参数不变。
+## 5. 校准 UI 交互流程
 
-5. 回归测试
-- 不触发新命令时，现有姿态采集与上报频率及格式不受影响。
+### 5.1 MainWindow 新增校准区域
 
-## 10. 结论
+MainWindow 中新增一个 GroupBox "校准控制"，包含：
 
-本设计在现有流程上增加了可控、可回包、可持久化的校准通道，满足上位机主动触发 `normal/slouch` 校准的需求，并为后续基于绝对值偏差的姿态判定算法提供稳定输入基础。
+| 控件 | 功能 |
+|------|------|
+| "校准坐正" 按钮 | 发送 `CMD:SET_NORMAL`，等待 ACK/ERR |
+| "校准驼背" 按钮 | 发送 `CMD:SET_SLOUCH`，等待 ACK/ERR |
+| 校准状态文本 | 显示当前 CalibrationState |
+| 正常角度显示 | 显示 ACK 返回的角度值 |
+| 驼背角度显示 | 显示 ACK 返回的角度值 |
+
+### 5.2 交互时序
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant UI as MainWindow
+    participant Proto as DeviceProtocol
+    participant Serial as SerialService
+    participant MCU as MCU
+
+    User->>UI: 点击"校准坐正"
+    UI->>Serial: SendLine("CMD:SET_NORMAL")
+    Serial->>MCU: CMD:SET_NORMAL\n
+    MCU-->>Serial: ACK:SET_NORMAL,ANGLE:12.34\n
+    Serial-->>Proto: 解析为 CalibrationAck
+    Proto-->>UI: 更新 CalibrationData
+    UI->>UI: 显示"坐正角度: 12.34°"
+    UI->>UI: 校准状态 → NormalSet
+```
+
+### 5.3 错误处理
+
+- 发送校准命令后 3 秒内未收到 ACK/ERR → 超时提示
+- 收到 ERR → 显示错误码和中文说明
+- 校准期间运行态数据继续正常接收和显示
+
+---
+
+## 6. SerialService 扩展
+
+### 6.1 新增发送方法
+
+```csharp
+// ISerialService 新增
+void SendLine(string line);
+```
+
+### 6.2 实现
+
+```csharp
+// SerialService 新增
+public void SendLine(string line)
+{
+    if (_serialPort?.IsOpen == true)
+    {
+        _serialPort.WriteLine(line);
+    }
+}
+```
+
+---
+
+## 7. 显示器选择功能设计
+
+### 7.1 需求
+
+允许用户选择 Overlay 窗口投射到哪块显示器上。不是多显示器同时覆盖，而是选择单一目标显示器。
+
+### 7.2 技术方案
+
+- 使用 `System.Windows.Forms.Screen.AllScreens` 枚举所有显示器
+- 获取每个显示器的 `DeviceName`、`Bounds`（X, Y, Width, Height）
+- OverlayWindow 不使用 `WindowState="Maximized"`，改为手动设置窗口位置和大小对齐目标屏幕
+
+### 7.3 模型扩展
+
+```csharp
+// AppConfig 新增
+public int TargetMonitorIndex { get; set; } = 0;  // 目标显示器索引
+```
+
+### 7.4 UI 设计
+
+MainWindow 串口连接区域下方新增：
+
+| 控件 | 功能 |
+|------|------|
+| "目标显示器" 下拉框 | 列出所有显示器（名称 + 分辨率） |
+| 自动检测 | 程序启动时枚举，热插拔时刷新 |
+
+### 7.5 OverlayWindow 行为变更
+
+当前 OverlayWindow 使用 `WindowState="Maximized"` 自动铺满主显示器。改为：
+
+```csharp
+// 设置窗口到目标显示器
+void SetTargetScreen(Screen screen)
+{
+    WindowState = WindowState.Normal;
+    WindowStyle = WindowStyle.None;
+    Left = screen.Bounds.Left;
+    Top = screen.Bounds.Top;
+    Width = screen.Bounds.Width;
+    Height = screen.Bounds.Height;
+}
+```
+
+---
+
+## 8. 实现优先级
+
+| 优先级 | 任务 | 依赖 |
+|--------|------|------|
+| P0 | DeviceProtocol 扩展 ACK/ERR 解析 | 无 |
+| P0 | SerialService 新增 SendLine | 无 |
+| P1 | CalibrationData 模型 + 状态管理 | P0 |
+| P1 | 校准 UI（MainWindow 新增校准区域） | P0, P1 |
+| P2 | 显示器枚举 + 选择下拉框 | 无 |
+| P2 | OverlayWindow 显示器定位 | P2 |
+
+---
+
+## 9. 测试计划
+
+| 测试 | 说明 |
+|------|------|
+| `DeviceProtocolTests.TryParseFull_ACK` | 验证 ACK 行正确解析为 CalibrationAckData |
+| `DeviceProtocolTests.TryParseFull_ERR` | 验证 ERR 行正确解析为 CalibrationErrData |
+| `DeviceProtocolTests.TryParseFull_RuntimeData` | 验证运行态数据仍然正常解析 |
+| `DeviceProtocolTests.TryParseFull_MixedFields` | 验证 ACK 多字段解析 |
+| `CalibrationDataTests.StateTransitions` | 验证校准状态转换逻辑 |
+| `ConfigServiceTests.TargetMonitorIndex` | 验证显示器选择配置持久化 |
