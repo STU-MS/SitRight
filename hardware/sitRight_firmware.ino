@@ -294,15 +294,13 @@ int computeBlurLevel(float curX, float curY, float curZ) {
 
   float projection = dotDevAxis / dotAxisAxis;
 
-  float x = clampFloat(projection, 0.0, 1.2);
+  float x = clampFloat(projection, 0.0, 1.0);
 
   float b = 0.0;
-  if (x <= 0.3) {
-    b = 30.0 * pow(x / 0.3, 1.6);
-  } else if (x <= 0.7) {
-    b = 30.0 + 40.0 * pow((x - 0.3) / 0.4, 1.2);
+  if (x < 0.1) {
+    b = 0;
   } else {
-    b = 70.0 + 30.0 * pow((x - 0.7) / 0.5, 0.8);
+    b = 100.0 * pow((x - 0.1) / 0.9, 0.75);
   }
 
   b = clampFloat(b, 0.0, 100.0);
