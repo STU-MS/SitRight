@@ -18,21 +18,10 @@ public class OverlayState
         level = Math.Clamp(level, 0, 100);
         var normalized = level / 100.0;
 
-        var maskOpacity = 0.02 + Math.Pow(normalized, 2.8) * 0.98;
-        if (level > 95)
-        {
+        // 线性映射 — 非线性敏感度由硬件端处理
+        var maskOpacity = normalized * 0.95;
+        if (level > 90)
             maskOpacity = 1.0;
-        }
-
-        string color;
-        if (level < 30)
-            color = "#FFFFFF";
-        else if (level < 60)
-            color = "#E0E0E0";
-        else if (level < 80)
-            color = "#BDBDBD";
-        else
-            color = "#9E9E9E";
 
         var edgeOpacity = Math.Pow(normalized, 1.8) * 0.25;
 
@@ -62,7 +51,7 @@ public class OverlayState
         return new OverlayState
         {
             MaskOpacity = maskOpacity,
-            MaskColor = color,
+            MaskColor = "#FFFFFF",
             EdgeOpacity = edgeOpacity,
             MessageText = messageText,
             MessageOpacity = messageOpacity,

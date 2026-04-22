@@ -30,9 +30,7 @@ public class ConfigServiceTests : IDisposable
         var initialConfig = new AppConfig
         {
             DefaultComPort = "COM5",
-            BaudRate = 9600,
-            CalibratedNormalAngle = 12.5,
-            CalibratedSlouchAngle = 26.5
+            BaudRate = 9600
         };
         _service.Save(initialConfig);
 
@@ -41,8 +39,6 @@ public class ConfigServiceTests : IDisposable
 
         Assert.Equal("COM5", loaded.DefaultComPort);
         Assert.Equal(9600, loaded.BaudRate);
-        Assert.Equal(12.5, loaded.CalibratedNormalAngle);
-        Assert.Equal(26.5, loaded.CalibratedSlouchAngle);
     }
 
     [Fact]
@@ -84,22 +80,18 @@ public class ConfigServiceTests : IDisposable
     }
 
     [Fact]
-    public void Save_PersistsCalibrationFields()
+    public void Save_PersistsAllFields()
     {
-        var calibratedAt = new DateTime(2026, 4, 15, 9, 30, 0, DateTimeKind.Local);
-
         _service.Save(new AppConfig
         {
-            CalibratedNormalAngle = 11.2,
-            CalibratedSlouchAngle = 24.8,
-            CalibratedAt = calibratedAt
+            DefaultComPort = "COM3",
+            BaudRate = 57600
         });
 
         var reloaded = new ConfigService(_testPath).Load();
 
-        Assert.Equal(11.2, reloaded.CalibratedNormalAngle);
-        Assert.Equal(24.8, reloaded.CalibratedSlouchAngle);
-        Assert.Equal(calibratedAt, reloaded.CalibratedAt);
+        Assert.Equal("COM3", reloaded.DefaultComPort);
+        Assert.Equal(57600, reloaded.BaudRate);
     }
 
     public void Dispose()

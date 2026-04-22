@@ -24,23 +24,16 @@ namespace SitRight
             int extendedStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
 
             if (enable)
-            {
                 SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle | WS_EX_TRANSPARENT);
-            }
             else
-            {
                 SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle & ~WS_EX_TRANSPARENT);
-            }
         }
 
         public OverlayWindow()
         {
             InitializeComponent();
-
-            MaskRect.Opacity = 0;
-            EdgeRect.Opacity = 0;
+            FrostedGrid.Opacity = 0;
             RootGrid.IsHitTestVisible = false;
-
             MoveToMonitor(0);
         }
 
@@ -63,11 +56,8 @@ namespace SitRight
 
         public void ApplyState(OverlayState state)
         {
-            MaskRect.Opacity = state.MaskOpacity;
-            var brush = new BrushConverter().ConvertFromString(state.MaskColor) as Brush;
-            MaskRect.Fill = brush ?? Brushes.White;
-
-            EdgeRect.Opacity = state.EdgeOpacity;
+            // 用 MaskOpacity 控制整体透明度
+            FrostedGrid.Opacity = state.MaskOpacity;
 
             SetClickThrough(!state.BlockInput);
         }

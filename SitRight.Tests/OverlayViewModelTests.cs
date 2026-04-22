@@ -29,7 +29,7 @@ public class OverlayViewModelTests
         var state = new OverlayState
         {
             MaskOpacity = 0.5,
-            MaskColor = "#E0E0E0",
+            MaskColor = "#FFFFFF",
             EdgeOpacity = 0.2,
             SeverityLevel = 2
         };
@@ -37,7 +37,7 @@ public class OverlayViewModelTests
         vm.UpdateFrom(state);
 
         Assert.Equal(0.5, vm.MaskOpacity);
-        Assert.Equal("#E0E0E0", vm.MaskColor);
+        Assert.Equal("#FFFFFF", vm.MaskColor);
         Assert.Equal(0.2, vm.EdgeOpacity);
         Assert.Equal(2, vm.SeverityLevel);
     }
@@ -70,17 +70,5 @@ public class OverlayViewModelTests
 
         Assert.Contains("MaskOpacity", changedProperties);
         Assert.Contains("IsVisible", changedProperties);
-    }
-
-    [Theory]
-    [InlineData(0, "#FFFFFF")]
-    [InlineData(100, "#9E9E9E")]
-    public void UpdateFrom_RespectsSeverityColor(int level, string expectedColor)
-    {
-        var vm = new OverlayViewModel();
-        var state = OverlayState.FromDisplayLevel(level);
-        vm.UpdateFrom(state);
-
-        Assert.Equal(expectedColor, vm.MaskColor);
     }
 }

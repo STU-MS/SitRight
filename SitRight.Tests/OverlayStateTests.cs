@@ -46,4 +46,25 @@ public class OverlayStateTests
         var state = OverlayState.FromDisplayLevel(level);
         Assert.Equal(expectedSeverity, state.SeverityLevel);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(50)]
+    [InlineData(100)]
+    public void FromDisplayLevel_MaskOpacity_AlwaysBetween0And1(int level)
+    {
+        var state = OverlayState.FromDisplayLevel(level);
+        Assert.InRange(state.MaskOpacity, 0.0, 1.0);
+    }
+
+    [Fact]
+    public void FromDisplayLevel_MaskOpacity_IncreasesWithLevel()
+    {
+        var low = OverlayState.FromDisplayLevel(20);
+        var mid = OverlayState.FromDisplayLevel(50);
+        var high = OverlayState.FromDisplayLevel(80);
+
+        Assert.True(low.MaskOpacity < mid.MaskOpacity);
+        Assert.True(mid.MaskOpacity < high.MaskOpacity);
+    }
 }

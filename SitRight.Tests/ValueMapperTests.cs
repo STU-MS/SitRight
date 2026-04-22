@@ -27,7 +27,7 @@ public class ValueMapperTests
     {
         var state = _mapper.Map(50);
         Assert.True(state.MaskOpacity > 0.1);
-        Assert.True(state.MaskOpacity < 0.3);
+        Assert.True(state.MaskOpacity < 0.6);
     }
 
     [Fact]
@@ -46,14 +46,13 @@ public class ValueMapperTests
     }
 
     [Theory]
-    [InlineData(0, "#FFFFFF")]
-    [InlineData(50, "#E0E0E0")]
-    [InlineData(70, "#BDBDBD")]
-    [InlineData(100, "#9E9E9E")]
-    public void Map_Level_ReturnsCorrectColor(int level, string expectedColor)
+    [InlineData(0)]
+    [InlineData(50)]
+    [InlineData(100)]
+    public void Map_MaskOpacity_AlwaysBetween0And1(int level)
     {
         var state = _mapper.Map(level);
-        Assert.Equal(expectedColor, state.MaskColor);
+        Assert.InRange(state.MaskOpacity, 0.0, 1.0);
     }
 
     [Fact]
